@@ -6,6 +6,7 @@ import api from '../api'
 import { AI_MODEL } from '../config'
 import { callAI } from '../ai'
 import { useImport } from '../ImportContext'
+import { parsePresentacion } from '../utils/presentacion'
 
 // PDF.js worker — usa archivo local, no CDN (funciona sin internet)
 pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl
@@ -326,16 +327,16 @@ export default function ImportarLista() {
           const nombres = [prod.producto.toLowerCase(), ...aliases]
           if (nombres.some(n => desc.includes(n) || n.includes(desc))) { codMatch = prod.codigo; estadoMatch = 'OK'; break }
         }
-        // Infer unit/quantity from presentacion
-        let cantNum = null, unidadMed = null
-        const pres = (r.presentacion || '').toLowerCase()
-        const cantMatch = pres.match(/(\d+[\d.,]*)\s*(kg|kgs|kilo|gr|grs|lt|lts|cc|ml|g)\b/)
-        if (cantMatch) {
-          cantNum = parseFloat(cantMatch[1].replace(',', '.'))
-          const u = cantMatch[2]
-          unidadMed = /kg|kilo/.test(u) ? 'kg' : /gr|g/.test(u) ? 'g' : /lt|lts/.test(u) ? 'l' : /ml|cc/.test(u) ? 'ml' : u
+        // Inferir cantidad total desde la presentación usando el parser robusto
+        // Maneja "10 BOLSAS X 1 KG" → 10 kg, "6 x 250 ML" → 1.5 litro, etc.
+        const parsedPres = parsePresentacion(r.presentacion)
+        let cantNum = null, unidadMed = null, cantBase = null
+        if (parsedPres) {
+          cantBase  = parsedPres.totalQty
+          unidadMed = parsedPres.baseUnit
+          cantNum   = parsedPres.totalQty
         }
-        const pxm = precio && cantNum > 0 ? precio / cantNum : null
+        const pxm = precio && cantBase > 0 ? precio / cantBase : null
         return {
           fecha, id_proveedor: proveedorFinal, proveedor: provObj?.proveedor || proveedorFinal,
           archivo_origen: archivo?.name,
@@ -403,7 +404,25 @@ Respondé SOLO con JSON válido, sin texto extra:
         const tipo = tipoRaw && String(tipoRaw).toUpperCase().includes('CAJA') ? 'CAJA' : 'UNIDAD'
         let pxu = precio
         if (precio && tipo === 'CAJA') pxu = precio / cajas
-        const pxm = pxu && cantNum > 0 ? pxu / cantNum : null
+        const rawUnidad = get('unidad_medida') ? String(get('unidad_medida')).toLowerCase().trim() : null
+        // Intentar calcular cantidad total desde la columna presentacion_original
+        // Maneja "10 BOLSAS X 1 KG" → 10 kg correctamente
+        const rawPres = get('presentacion_original') ? String(get('presentacion_original')).trim() : null
+        const parsedPres = parsePresentacion(rawPres)
+        let cantBase, unidadFinal
+        if (parsedPres) {
+          cantBase   = parsedPres.totalQty
+          unidadFinal = parsedPres.baseUnit
+        } else {
+          // Fallback: usar columna cantidad_por_unidad + unidad_medida
+          cantBase   = cantNum
+          unidadFinal = rawUnidad
+          if (cantNum && rawUnidad) {
+            if (/^(g|gr|grs)$/.test(rawUnidad)) cantBase = cantNum / 1000
+            if (/^(ml|cc)$/.test(rawUnidad))    cantBase = cantNum / 1000
+          }
+        }
+        const pxm = pxu && cantBase > 0 ? pxu / cantBase : null
         const desc = get('producto_original') ? String(get('producto_original')).toLowerCase().trim() : ''
         let codMatch = null, estadoMatch = 'PENDIENTE'
         for (const prod of productos) {
@@ -416,8 +435,8 @@ Respondé SOLO con JSON válido, sin texto extra:
           archivo_origen: archivo?.name,
           producto_original: get('producto_original') ? String(get('producto_original')).trim() : null,
           presentacion_original: get('presentacion_original') ? String(get('presentacion_original')).trim() : null,
-          tipo_compra: tipo, unidades_por_caja: cajas, cantidad_por_unidad: cantNum,
-          unidad_medida: get('unidad_medida') ? String(get('unidad_medida')).trim() : null,
+          tipo_compra: tipo, unidades_por_caja: cajas, cantidad_por_unidad: cantBase,
+          unidad_medida: unidadFinal || (get('unidad_medida') ? String(get('unidad_medida')).trim() : null),
           precio_informado: precio, moneda: 'ARS',
           observaciones: get('observaciones') ? String(get('observaciones')).trim() : null,
           codigo_producto: codMatch, estado_match: estadoMatch,

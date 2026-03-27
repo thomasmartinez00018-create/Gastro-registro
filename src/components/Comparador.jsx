@@ -1,5 +1,31 @@
 import { useState, useEffect } from 'react'
 import api from '../api'
+import { parsePresentacion } from '../utils/presentacion'
+
+/**
+ * Calcula el precio por unidad base real, reinterpretando la presentación.
+ * Corrige registros históricos almacenados con el cálculo simple (sin multiplicar).
+ * Ej: "10 BOLSAS X 1 KG" con precio $84.000 → $84.000/10 = $8.400/kg (no $84.000/kg)
+ */
+function effectivePxm(row) {
+  const parsed = parsePresentacion(row.presentacion_original)
+  if (parsed && parsed.totalQty > 0 && row.precio_por_unidad != null) {
+    return row.precio_por_unidad / parsed.totalQty
+  }
+  return row.precio_por_medida_base
+}
+
+/**
+ * Infiere la unidad base (kg / litro) a partir de las filas del grupo.
+ * Prioriza lo que devuelve parsePresentacion; fallback a unidad_medida almacenada.
+ */
+function effectiveBaseUnit(rows) {
+  for (const r of rows) {
+    const p = parsePresentacion(r.presentacion_original)
+    if (p) return p.baseUnit
+  }
+  return rows[0]?.unidad_medida || 'medida'
+}
 
 const fmt = (n) => n != null ? `$${Number(n).toLocaleString('es-AR', { maximumFractionDigits: 2 })}` : '—'
 
@@ -111,7 +137,7 @@ export default function Comparador() {
   const totalProductos = entries.length
   const conAhorro = entries.filter(([, g]) => {
     const rowsToCheck = viewMode === 'ultima' ? getUltimaRows(g.rows) : g.rows
-    const precios = rowsToCheck.map(r => r.precio_por_medida_base).filter(p => p != null && p > 0)
+    const precios = rowsToCheck.map(r => effectivePxm(r)).filter(p => p != null && p > 0)
     return precios.length > 1 && Math.max(...precios) > Math.min(...precios)
   }).length
 
@@ -215,8 +241,8 @@ export default function Comparador() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             {entries.map(([cod, g]) => {
               const displayRows = viewMode === 'ultima' ? getUltimaRows(g.rows) : g.rows
-              const rowsSorted = [...displayRows].sort((a, b) => (a.precio_por_medida_base ?? Infinity) - (b.precio_por_medida_base ?? Infinity))
-              const precios = rowsSorted.map(r => r.precio_por_medida_base).filter(p => p != null && p > 0)
+              const rowsSorted = [...displayRows].sort((a, b) => (effectivePxm(a) ?? Infinity) - (effectivePxm(b) ?? Infinity))
+              const precios = rowsSorted.map(r => effectivePxm(r)).filter(p => p != null && p > 0)
               const minP = precios.length ? Math.min(...precios) : null
               const maxP = precios.length ? Math.max(...precios) : null
               const ahorro = minP && maxP && maxP > minP ? ((maxP - minP) / maxP * 100).toFixed(0) : 0
@@ -225,8 +251,8 @@ export default function Comparador() {
               const evoRows = viewMode === 'evolucion' ? getEvoRows(cod) : []
               const isExpanded = !!expandedEvo[cod]
 
-              // Feature 4: determine unit label for precio/medida column
-              const unidadLabel = g.unidad_medida || 'medida'
+              // Unidad base inferida desde la presentación (corrige unidad_medida almacenada incorrectamente)
+              const unidadLabel = effectiveBaseUnit(g.rows)
               // Feature 4: tooltip text for $/unidad column
               const tooltipNorm = `Precio normalizado a la unidad base (${unidadLabel}). Permite comparar presentaciones distintas de un mismo producto (ej: bolsa 5kg vs bolsa 25kg → ambas se expresan en $/kg).`
 
@@ -280,8 +306,9 @@ export default function Comparador() {
                       </thead>
                       <tbody>
                         {rowsSorted.map((r, i) => {
-                          const isBest = r.precio_por_medida_base === minP && minP != null
-                          const isWorst = r.precio_por_medida_base === maxP && maxP != null && maxP !== minP
+                          const pxm = effectivePxm(r)
+                          const isBest = pxm === minP && minP != null
+                          const isWorst = pxm === maxP && maxP != null && maxP !== minP
                           return (
                             <tr key={i} style={isBest ? { background: '#f0fdf4' } : {}}>
                               <td style={{ fontWeight: 600 }}>
@@ -295,7 +322,7 @@ export default function Comparador() {
                               <td>{fmt(r.precio_por_unidad)}</td>
                               <td>
                                 <span className={isBest ? 'best-price' : isWorst ? 'worst-price' : ''}>
-                                  {fmt(r.precio_por_medida_base)}
+                                  {fmt(pxm)}
                                   {isBest && <span style={{ marginLeft: '4px', fontSize: '10px' }}>▼ mejor</span>}
                                   {isWorst && <span style={{ marginLeft: '4px', fontSize: '10px' }}>▲ mayor</span>}
                                 </span>
@@ -334,7 +361,7 @@ export default function Comparador() {
                                   <td className="font-mono">{r.fecha || '—'}</td>
                                   <td style={{ fontWeight: 500 }}>{r.proveedor || r.id_proveedor}</td>
                                   <td className="text-muted">{r.presentacion_original || '—'}</td>
-                                  <td style={{ fontWeight: 600, color: 'var(--primary)' }}>{fmt(r.precio_por_medida_base)}</td>
+                                  <td style={{ fontWeight: 600, color: 'var(--primary)' }}>{fmt(effectivePxm(r))}</td>
                                   <td className="text-muted">{fmt(r.precio_informado)}</td>
                                 </tr>
                               ))}

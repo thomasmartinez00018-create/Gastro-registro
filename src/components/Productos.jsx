@@ -49,8 +49,14 @@ export default function Productos() {
   const [barcodeActive, setBarcodeActive] = useState(false)
   const [barcodeVal, setBarcodeVal] = useState('')
 
+  // Eliminar duplicados
+  const [dupModal, setDupModal]   = useState(false)
+  const [dupGroups, setDupGroups] = useState([])  // [{ key, items: [prod,...] }]
+  const [dupKeep, setDupKeep]     = useState({})  // { key: id_a_conservar }
+  const [dupDeleting, setDupDeleting] = useState(false)
+
   // Feature 2: price comparison modal
-  const [preciosModal, setPreciosModal] = useState(null) // { producto: item, rows: [] } | null
+  const [preciosModal, setPreciosModal] = useState(null)
   const [preciosLoading, setPreciosLoading] = useState(false)
 
   // Feature 5: AI categorization modal
@@ -81,6 +87,51 @@ export default function Productos() {
   const handleDelete = async (id) => {
     if (!confirm('¿Eliminar este producto?')) return
     await api.productos.delete(id); await load()
+  }
+
+  // ── Duplicados ────────────────────────────────────────────────────────────────
+  const normalize = (s) => (s || '').toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')  // quitar tildes
+    .replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim()
+
+  const handleFindDups = () => {
+    const groups = {}
+    for (const item of items) {
+      const key = normalize(item.producto)
+      if (!groups[key]) groups[key] = []
+      groups[key].push(item)
+    }
+    const dups = Object.entries(groups)
+      .filter(([, arr]) => arr.length > 1)
+      .map(([key, arr]) => ({ key, items: arr }))
+    setDupGroups(dups)
+    // Pre-seleccionar el que tenga más datos completos
+    const keeps = {}
+    for (const g of dups) {
+      const scored = g.items.map(i => ({
+        id: i.id,
+        score: [i.categoria, i.unidad_base, i.marca, i.alias, i.codigos_maxirest]
+          .filter(Boolean).length
+      }))
+      scored.sort((a, b) => b.score - a.score)
+      keeps[g.key] = scored[0].id
+    }
+    setDupKeep(keeps)
+    setDupModal(true)
+  }
+
+  const handleDeleteDups = async () => {
+    setDupDeleting(true)
+    try {
+      for (const g of dupGroups) {
+        const keepId = dupKeep[g.key]
+        for (const item of g.items) {
+          if (item.id !== keepId) await api.productos.delete(item.id)
+        }
+      }
+      await load()
+      setDupModal(false)
+    } finally { setDupDeleting(false) }
   }
 
   // ── Barcode scanner ──────────────────────────────────────────────────────────
@@ -295,6 +346,9 @@ Respondé SOLO con JSON válido, sin texto extra:
               🤖 Categorizar con IA ({itemsWithoutCat.length})
             </button>
           )}
+          <button className="btn btn-secondary" onClick={handleFindDups}>
+            🔍 Eliminar duplicados
+          </button>
           <button className="btn btn-secondary" onClick={() => { setBarcodeActive(v => !v) }}>
             {barcodeActive ? '✕ Cerrar escáner' : '📷 Lector de código de barras'}
           </button>
@@ -725,6 +779,109 @@ Respondé SOLO con JSON válido, sin texto extra:
       )}
 
       {/* ── Feature 5: AI categorization modal ───────────────────────────── */}
+      {/* ── Eliminar duplicados modal ──────────────────────────────────────── */}
+      {dupModal && createPortal(
+        <div className="modal-overlay" onClick={e => e.target === e.currentTarget && !dupDeleting && setDupModal(false)}>
+          <div className="modal modal-lg" style={{ width: '800px', maxHeight: '88vh' }}>
+            <div className="modal-header">
+              <div>
+                <h3>🔍 Eliminar productos duplicados</h3>
+                <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                  {dupGroups.length === 0
+                    ? 'No se encontraron duplicados'
+                    : `${dupGroups.length} grupo${dupGroups.length !== 1 ? 's' : ''} de duplicados detectados`}
+                </div>
+              </div>
+              <button className="btn btn-ghost btn-sm" onClick={() => !dupDeleting && setDupModal(false)}>✕</button>
+            </div>
+            <div className="modal-body">
+              {dupGroups.length === 0 ? (
+                <div className="empty-state">
+                  <div className="icon">✅</div>
+                  <p>No se encontraron productos duplicados. Tu catálogo está limpio.</p>
+                </div>
+              ) : (
+                <div>
+                  <div className="alert alert-info mb-3" style={{ fontSize: '13px' }}>
+                    Se detectaron <strong>{dupGroups.length} grupos</strong> con nombres similares.
+                    Para cada grupo, elegí cuál conservar — los demás serán eliminados
+                    ({dupGroups.reduce((n, g) => n + g.items.length - 1, 0)} registros en total).
+                    El sistema pre-seleccionó el producto con más datos completos.
+                  </div>
+                  <div style={{ maxHeight: '440px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    {dupGroups.map(g => (
+                      <div key={g.key} style={{ border: '1px solid var(--border)', borderRadius: '8px', overflow: 'hidden' }}>
+                        <div style={{
+                          background: '#f8fafc', padding: '8px 14px', fontSize: '11px', fontWeight: 700,
+                          textTransform: 'uppercase', letterSpacing: '.06em', color: 'var(--text-muted)',
+                          borderBottom: '1px solid var(--border)'
+                        }}>
+                          {g.items[0].producto} · {g.items.length} registros
+                        </div>
+                        <table style={{ fontSize: '12px' }}>
+                          <thead>
+                            <tr>
+                              <th style={{ width: '40px', textAlign: 'center' }}>✓</th>
+                              <th>Código</th>
+                              <th>Nombre</th>
+                              <th>Categoría</th>
+                              <th>Unidad</th>
+                              <th>Cód. Maxirest</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {g.items.map(item => {
+                              const isKeep = dupKeep[g.key] === item.id
+                              return (
+                                <tr key={item.id} style={isKeep ? { background: '#f0fdf4' } : { opacity: 0.55 }}>
+                                  <td style={{ textAlign: 'center' }}>
+                                    <input
+                                      type="radio"
+                                      name={`dup-${g.key}`}
+                                      checked={isKeep}
+                                      onChange={() => setDupKeep(prev => ({ ...prev, [g.key]: item.id }))}
+                                    />
+                                  </td>
+                                  <td><span className="font-mono badge badge-blue">{item.codigo}</span></td>
+                                  <td style={{ fontWeight: isKeep ? 700 : 400 }}>{item.producto}</td>
+                                  <td className="text-muted">{item.categoria || '—'}</td>
+                                  <td className="text-muted">{item.unidad_base || '—'}</td>
+                                  <td className="text-muted font-mono" style={{ fontSize: '11px' }}>
+                                    {item.codigos_maxirest || '—'}
+                                  </td>
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={() => setDupModal(false)} disabled={dupDeleting}>
+                Cancelar
+              </button>
+              {dupGroups.length > 0 && (
+                <button
+                  className="btn btn-accent"
+                  onClick={handleDeleteDups}
+                  disabled={dupDeleting}
+                  style={{ background: '#dc2626', borderColor: '#dc2626' }}
+                >
+                  {dupDeleting
+                    ? '⏳ Eliminando...'
+                    : `🗑️ Confirmar: eliminar ${dupGroups.reduce((n, g) => n + g.items.length - 1, 0)} duplicados`}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
       {aiCatModal && createPortal(
         <div className="modal-overlay" onClick={e => e.target === e.currentTarget && !aiCatLoading && !aiCatApplying && setAiCatModal(false)}>
           <div className="modal modal-lg" style={{ width: '820px', maxHeight: '88vh' }}>
