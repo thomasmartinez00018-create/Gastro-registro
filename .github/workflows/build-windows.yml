@@ -2,8 +2,9 @@ name: Build Windows Installer
 
 on:
   push:
-    branches: [main, master]
-  workflow_dispatch:   # permite correrlo manualmente desde GitHub
+    tags:
+      - 'v*'          # Solo cuando hacés git tag v1.0.1 y push
+  workflow_dispatch:  # También podés correrlo manualmente
 
 jobs:
   build:
@@ -31,12 +32,20 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Subir instalador como artefacto
-        uses: actions/upload-artifact@v4
+      - name: Publicar Release en GitHub
+        uses: softprops/action-gh-release@v2
         with:
-          name: GestionProveedores-Windows
-          path: |
+          name: "Gestión Proveedores ${{ github.ref_name }}"
+          body: |
+            ## Instalador Windows
+
+            Descargá el archivo `.exe` e instalalo con doble clic.
+            No requiere configuración adicional.
+
+            **Requiere:** Windows 10 o superior (64 bits)
+          files: |
             dist-electron/**/*.exe
-            dist-electron/**/*.msi
-          if-no-files-found: warn
-          retention-days: 30
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
