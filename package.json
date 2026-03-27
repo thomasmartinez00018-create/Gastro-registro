@@ -29,7 +29,7 @@
     "copyright": "v1.0.0",
     "directories": {
       "output": "dist-electron",
-      "buildResources": "public"
+      "buildResources": "build"
     },
     "files": [
       "dist/**/*",
@@ -50,7 +50,7 @@
           ]
         }
       ],
-      "icon": "public/icon.ico"
+      "icon": "build/icon.ico"
     },
     "nsis": {
       "oneClick": true,
@@ -62,7 +62,7 @@
     },
     "mac": {
       "target": "dmg",
-      "icon": "public/icon.ico"
+      "icon": "build/icon.icns"
     }
   }
 }
