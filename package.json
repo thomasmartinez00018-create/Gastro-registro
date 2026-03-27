@@ -1,0 +1,68 @@
+{
+  "name": "gestion-proveedores",
+  "version": "1.0.0",
+  "description": "Sistema de gestión de listas de precios y proveedores gastronómicos",
+  "main": "electron/main.js",
+  "scripts": {
+    "dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
+    "build": "vite build && electron-builder",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "better-sqlite3": "^9.4.3",
+    "pdfjs-dist": "^5.5.207",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.2.1",
+    "concurrently": "^8.2.2",
+    "electron": "^29.1.4",
+    "electron-builder": "^24.13.3",
+    "vite": "^5.1.6",
+    "wait-on": "^7.2.0"
+  },
+  "build": {
+    "appId": "com.gastronomia.gestionproveedores",
+    "productName": "Gestión Proveedores",
+    "copyright": "v1.0.0",
+    "directories": {
+      "output": "dist-electron",
+      "buildResources": "public"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "node_modules/**/*",
+      "!node_modules/.cache/**/*"
+    ],
+    "asar": true,
+    "asarUnpack": [
+      "node_modules/better-sqlite3/**/*"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "public/icon.ico"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Gestión Proveedores"
+    },
+    "mac": {
+      "target": "dmg",
+      "icon": "public/icon.ico"
+    }
+  }
+}

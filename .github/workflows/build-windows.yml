@@ -1,0 +1,39 @@
+name: Build Windows Installer
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:   # permite correrlo manualmente desde GitHub
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Instalar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Instalar dependencias
+        run: npm install
+
+      - name: Build Vite (frontend)
+        run: npx vite build
+        env:
+          VITE_OPENAI_KEY: ${{ secrets.VITE_OPENAI_KEY }}
+
+      - name: Package Electron (Windows .exe)
+        run: npx electron-builder --win --x64
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Subir instalador como artefacto
+        uses: actions/upload-artifact@v4
+        with:
+          name: GestionProveedores-Windows
+          path: dist-electron/*.exe
+          retention-days: 30
