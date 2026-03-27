@@ -1,10 +1,11 @@
 import { useState } from 'react'
-import Dashboard    from './components/Dashboard'
-import Productos    from './components/Productos'
-import Proveedores  from './components/Proveedores'
+import { ImportProvider, useImport } from './ImportContext'
+import Dashboard     from './components/Dashboard'
+import Productos     from './components/Productos'
+import Proveedores   from './components/Proveedores'
 import ImportarLista from './components/ImportarLista'
 import Equivalencias from './components/Equivalencias'
-import Comparador   from './components/Comparador'
+import Comparador    from './components/Comparador'
 
 const SECTIONS = [
   {
@@ -44,8 +45,10 @@ const PAGES = {
   comparador:    Comparador,
 }
 
-export default function App() {
+// Componente interno — tiene acceso al ImportContext
+function AppInner() {
   const [page, setPage] = useState('dashboard')
+  const { job } = useImport()
   const Page = PAGES[page] || Dashboard
 
   return (
@@ -66,16 +69,29 @@ export default function App() {
           {SECTIONS.map(section => (
             <div key={section.title}>
               <div className="nav-section-title">{section.title}</div>
-              {section.items.map(item => (
-                <button
-                  key={item.id}
-                  className={`nav-item ${page === item.id ? 'active' : ''}`}
-                  onClick={() => setPage(item.id)}
-                >
-                  <span className="icon">{item.icon}</span>
-                  {item.label}
-                </button>
-              ))}
+              {section.items.map(item => {
+                // Indicador animado cuando hay importación activa en segundo plano
+                const isImportando = item.id === 'importar' && job.aiProcessing && page !== 'importar'
+                return (
+                  <button
+                    key={item.id}
+                    className={`nav-item ${page === item.id ? 'active' : ''}`}
+                    onClick={() => setPage(item.id)}
+                  >
+                    <span className="icon">{item.icon}</span>
+                    <span style={{ flex: 1 }}>{item.label}</span>
+                    {isImportando && (
+                      <span style={{
+                        width: '8px', height: '8px', borderRadius: '50%',
+                        background: 'var(--accent)',
+                        boxShadow: '0 0 6px var(--accent)',
+                        animation: 'pulse-dot 1.2s ease-in-out infinite',
+                        flexShrink: 0,
+                      }} title="Importación en progreso…" />
+                    )}
+                  </button>
+                )
+              })}
             </div>
           ))}
         </nav>
@@ -83,7 +99,9 @@ export default function App() {
         {/* Footer */}
         <div className="sidebar-footer">
           <span className="sidebar-footer-badge">v1.0</span>
-          <span className="sidebar-footer-text">Gastronomía</span>
+          <span className="sidebar-footer-text">
+            {job.aiProcessing ? '⏳ Procesando…' : 'Gastronomía'}
+          </span>
         </div>
       </aside>
 
@@ -93,5 +111,14 @@ export default function App() {
       </main>
 
     </div>
+  )
+}
+
+// Raíz — provee el contexto
+export default function App() {
+  return (
+    <ImportProvider>
+      <AppInner />
+    </ImportProvider>
   )
 }

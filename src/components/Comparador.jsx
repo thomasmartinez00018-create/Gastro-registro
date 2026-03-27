@@ -3,8 +3,18 @@ import api from '../api'
 
 const fmt = (n) => n != null ? `$${Number(n).toLocaleString('es-AR', { maximumFractionDigits: 2 })}` : '—'
 
+function defaultDesde() {
+  const d = new Date()
+  d.setDate(d.getDate() - 90)
+  return d.toISOString().split('T')[0]
+}
+function todayStr() {
+  return new Date().toISOString().split('T')[0]
+}
+
 export default function Comparador() {
   const [data, setData] = useState([])
+  const [allListas, setAllListas] = useState([])
   const [productos, setProductos] = useState([])
   const [cats, setCats] = useState([])
   const [catFilter, setCatFilter] = useState('')
@@ -12,14 +22,24 @@ export default function Comparador() {
   const [loading, setLoading] = useState(false)
   const [exporting, setExporting] = useState(false)
 
+  // Feature 6: date range + view toggle
+  const [desde, setDesde] = useState(defaultDesde())
+  const [hasta, setHasta] = useState(todayStr())
+  const [viewMode, setViewMode] = useState('ultima') // 'ultima' | 'evolucion'
+
+  // Feature 6: expandable evolution rows
+  const [expandedEvo, setExpandedEvo] = useState({}) // { [cod]: bool }
+
   const load = async () => {
     setLoading(true)
     try {
-      const [rows, prods] = await Promise.all([
+      const [rows, prods, listas] = await Promise.all([
         api.comparador.getComparativa({}),
         api.productos.getAll(),
+        api.listas.getAll(),
       ])
       setData(rows)
+      setAllListas(listas)
       setProductos(prods)
       setCats([...new Set(prods.map(p => p.categoria).filter(Boolean))].sort())
     } finally { setLoading(false) }
@@ -43,8 +63,15 @@ export default function Comparador() {
     } finally { setExporting(false) }
   }
 
+  // ── Feature 6: filter data by date range ──────────────────────────────────
+  const dataInRange = data.filter(r => {
+    if (!r.fecha) return true
+    return r.fecha >= desde && r.fecha <= hasta
+  })
+
+  // ── Group & filter (Feature 1: search also by codigo_producto) ─────────────
   const grouped = {}
-  data.forEach(row => {
+  dataInRange.forEach(row => {
     const key = row.codigo_producto
     if (!grouped[key]) grouped[key] = { producto: row.producto_estandar, categoria: row.categoria, unidad_medida: row.unidad_medida, rows: [] }
     grouped[key].rows.push(row)
@@ -53,13 +80,38 @@ export default function Comparador() {
   const entries = Object.entries(grouped).filter(([cod, g]) => {
     const matchCat = !catFilter || g.categoria === catFilter
     const q = search.toLowerCase()
+    // Feature 1: search by product name OR codigo_producto (internal code)
     const matchSearch = !q || g.producto?.toLowerCase().includes(q) || cod.toLowerCase().includes(q)
     return matchCat && matchSearch
   })
 
+  // ── Feature 6 "Última lista" mode: one row per proveedor (most recent) ─────
+  function getUltimaRows(rows) {
+    const byProv = {}
+    rows.forEach(r => {
+      const key = r.id_proveedor || r.proveedor
+      if (!byProv[key] || (r.fecha || '') > (byProv[key].fecha || '')) {
+        byProv[key] = r
+      }
+    })
+    return Object.values(byProv)
+  }
+
+  // ── Feature 6 "Evolución histórica": all listas rows for this product ──────
+  function getEvoRows(cod) {
+    return allListas
+      .filter(l => l.codigo_producto === cod && l.estado_match === 'OK' && l.precio_por_medida_base != null)
+      .filter(l => {
+        if (!l.fecha) return true
+        return l.fecha >= desde && l.fecha <= hasta
+      })
+      .sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''))
+  }
+
   const totalProductos = entries.length
   const conAhorro = entries.filter(([, g]) => {
-    const precios = g.rows.map(r => r.precio_por_medida_base).filter(p => p != null && p > 0)
+    const rowsToCheck = viewMode === 'ultima' ? getUltimaRows(g.rows) : g.rows
+    const precios = rowsToCheck.map(r => r.precio_por_medida_base).filter(p => p != null && p > 0)
     return precios.length > 1 && Math.max(...precios) > Math.min(...precios)
   }).length
 
@@ -90,20 +142,63 @@ export default function Comparador() {
             <div className="stat-label">Con diferencia de precio</div>
           </div>
           <div className="stat-card">
-            <div className="stat-number">{data.length}</div>
+            <div className="stat-number">{dataInRange.length}</div>
             <div className="stat-label">Registros de precios</div>
           </div>
         </div>
 
+        {/* ── Filters card ────────────────────────────────────────────────── */}
         <div className="card mb-3">
-          <div className="card-body" style={{ padding: '10px 16px', display: 'flex', gap: '12px', alignItems: 'center' }}>
-            <div className="search-bar" style={{ flex: 1 }}>
-              <input className="form-input" placeholder="Buscar producto o código..." value={search} onChange={e => setSearch(e.target.value)} />
+          <div className="card-body" style={{ padding: '10px 16px', display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
+            {/* Feature 1: search by name OR internal code */}
+            <div className="search-bar" style={{ flex: 1, minWidth: '180px' }}>
+              <input
+                className="form-input"
+                placeholder="Buscar por nombre o código interno..."
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+              />
             </div>
             <select className="form-select" style={{ width: '180px' }} value={catFilter} onChange={e => setCatFilter(e.target.value)}>
               <option value="">Todas las categorías</option>
               {cats.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
+
+            {/* Feature 6: date range */}
+            <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+              <span style={{ fontSize: '12px', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>Desde</span>
+              <input
+                className="form-input"
+                type="date"
+                style={{ width: '130px', fontSize: '12px' }}
+                value={desde}
+                onChange={e => setDesde(e.target.value)}
+              />
+              <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Hasta</span>
+              <input
+                className="form-input"
+                type="date"
+                style={{ width: '130px', fontSize: '12px' }}
+                value={hasta}
+                onChange={e => setHasta(e.target.value)}
+              />
+            </div>
+
+            {/* Feature 6: view mode toggle */}
+            <div style={{ display: 'flex', gap: '4px' }}>
+              <button
+                className={`btn btn-sm ${viewMode === 'ultima' ? 'btn-primary' : 'btn-secondary'}`}
+                onClick={() => setViewMode('ultima')}
+              >
+                📅 Última lista
+              </button>
+              <button
+                className={`btn btn-sm ${viewMode === 'evolucion' ? 'btn-primary' : 'btn-secondary'}`}
+                onClick={() => setViewMode('evolucion')}
+              >
+                📈 Evolución histórica
+              </button>
+            </div>
           </div>
         </div>
 
@@ -119,11 +214,21 @@ export default function Comparador() {
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             {entries.map(([cod, g]) => {
-              const rowsSorted = [...g.rows].sort((a, b) => (a.precio_por_medida_base ?? Infinity) - (b.precio_por_medida_base ?? Infinity))
+              const displayRows = viewMode === 'ultima' ? getUltimaRows(g.rows) : g.rows
+              const rowsSorted = [...displayRows].sort((a, b) => (a.precio_por_medida_base ?? Infinity) - (b.precio_por_medida_base ?? Infinity))
               const precios = rowsSorted.map(r => r.precio_por_medida_base).filter(p => p != null && p > 0)
               const minP = precios.length ? Math.min(...precios) : null
               const maxP = precios.length ? Math.max(...precios) : null
               const ahorro = minP && maxP && maxP > minP ? ((maxP - minP) / maxP * 100).toFixed(0) : 0
+
+              // Feature 6: evolution data
+              const evoRows = viewMode === 'evolucion' ? getEvoRows(cod) : []
+              const isExpanded = !!expandedEvo[cod]
+
+              // Feature 4: determine unit label for precio/medida column
+              const unidadLabel = g.unidad_medida || 'medida'
+              // Feature 4: tooltip text for $/unidad column
+              const tooltipNorm = `Precio normalizado a la unidad base (${unidadLabel}). Permite comparar presentaciones distintas de un mismo producto (ej: bolsa 5kg vs bolsa 25kg → ambas se expresan en $/kg).`
 
               return (
                 <div key={cod} className="card">
@@ -136,19 +241,41 @@ export default function Comparador() {
                     <div style={{ display: 'flex', gap: '16px', alignItems: 'center', flexShrink: 0 }}>
                       {minP && (
                         <div style={{ textAlign: 'right' }}>
-                          <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Mejor precio/{g.unidad_medida || 'unidad'}</div>
+                          <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Mejor precio/{unidadLabel}</div>
                           <div style={{ fontWeight: 800, color: 'var(--primary)', fontSize: '16px' }}>{fmt(minP)}</div>
                         </div>
                       )}
                       {ahorro > 0 && <span className="badge badge-yellow">Ahorro posible: {ahorro}%</span>}
+                      {/* Feature 6: evolucion toggle */}
+                      {viewMode === 'evolucion' && (
+                        <button
+                          className="btn btn-ghost btn-sm"
+                          onClick={() => setExpandedEvo(prev => ({ ...prev, [cod]: !prev[cod] }))}
+                          title="Ver evolución histórica de precios"
+                        >
+                          {isExpanded ? '▲ Ocultar historial' : '▼ Ver historial'}
+                        </button>
+                      )}
                     </div>
                   </div>
+
                   <div className="table-wrapper">
                     <table>
                       <thead>
                         <tr>
-                          <th>Proveedor</th><th>Producto original</th><th>Presentación</th><th>Tipo</th>
-                          <th>Precio lista</th><th>Precio/unidad</th><th>Precio/{g.unidad_medida || 'medida'}</th><th>Fecha</th>
+                          <th>Proveedor</th>
+                          <th>Producto original</th>
+                          <th>Presentación</th>
+                          <th>Tipo</th>
+                          <th>Precio lista</th>
+                          {/* Feature 4: tooltip on $/unidad column */}
+                          <th title={tooltipNorm} style={{ cursor: 'help', borderBottom: '1px dashed var(--text-muted)' }}>
+                            $/unidad ℹ
+                          </th>
+                          <th>
+                            ${unidadLabel === 'kg' ? '/kg' : unidadLabel === 'litro' ? '/litro' : `/${unidadLabel}`}
+                          </th>
+                          <th>Fecha</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -180,6 +307,43 @@ export default function Comparador() {
                       </tbody>
                     </table>
                   </div>
+
+                  {/* Feature 6: expandable price evolution section */}
+                  {viewMode === 'evolucion' && isExpanded && (
+                    <div style={{ borderTop: '1px solid var(--border)', padding: '12px 16px', background: '#fafaf8' }}>
+                      <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '.05em' }}>
+                        📈 Evolución de precios — {evoRows.length} registros
+                      </div>
+                      {evoRows.length === 0 ? (
+                        <p className="text-muted" style={{ fontSize: '12px' }}>No hay registros históricos en el rango de fechas seleccionado.</p>
+                      ) : (
+                        <div className="table-wrapper">
+                          <table style={{ fontSize: '12px' }}>
+                            <thead>
+                              <tr>
+                                <th>Fecha</th>
+                                <th>Proveedor</th>
+                                <th>Presentación</th>
+                                <th>${unidadLabel === 'kg' ? '/kg' : unidadLabel === 'litro' ? '/litro' : `/${unidadLabel}`}</th>
+                                <th>Precio lista</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {evoRows.map((r, i) => (
+                                <tr key={i}>
+                                  <td className="font-mono">{r.fecha || '—'}</td>
+                                  <td style={{ fontWeight: 500 }}>{r.proveedor || r.id_proveedor}</td>
+                                  <td className="text-muted">{r.presentacion_original || '—'}</td>
+                                  <td style={{ fontWeight: 600, color: 'var(--primary)' }}>{fmt(r.precio_por_medida_base)}</td>
+                                  <td className="text-muted">{fmt(r.precio_informado)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               )
             })}

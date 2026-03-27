@@ -1,9 +1,11 @@
 import { useState, useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import * as pdfjsLib from 'pdfjs-dist'
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import api from '../api'
 import { AI_MODEL } from '../config'
 import { callAI } from '../ai'
+import { useImport } from '../ImportContext'
 
 // PDF.js worker — usa archivo local, no CDN (funciona sin internet)
 pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl
@@ -156,25 +158,33 @@ function parseArgPrice(str) {
 
 // ─────────────────────────────────────────────────────────────────────────────
 export default function ImportarLista() {
-  const [step, setStep] = useState(1)
+  // ── Estado persistente entre navegaciones (Context en App) ─────────────────
+  const { job, update, reset: resetContext, fileRef } = useImport()
+  const {
+    step, idProveedor, fecha, archivoInfo: archivo,
+    sheetSel, headerRow, headers, mapping, rows,
+    aiProcessing, aiMessage, pdfProgress,
+  } = job
+
+  // Aliases de escritura → actualizan el context (sobreviven a navegación)
+  const setStep         = (v) => update({ step: v })
+  const setIdProveedor  = (v) => update({ idProveedor: v })
+  const setFecha        = (v) => update({ fecha: v })
+  const setArchivo      = (v) => update({ archivoInfo: v })
+  const setSheetSel     = (v) => update({ sheetSel: v })
+  const setHeaderRow    = (v) => update({ headerRow: v })
+  const setHeaders      = (v) => update({ headers: v })
+  const setMapping      = (fn) => update({ mapping: typeof fn === 'function' ? fn(job.mapping) : fn })
+  const setRows         = (fn) => update({ rows: typeof fn === 'function' ? fn(job.rows) : fn })
+  const setAiProcessing = (v) => update({ aiProcessing: v, active: v })
+  const setAiMessage    = (v) => update({ aiMessage: v })
+  const setPdfProgress  = (v) => update({ pdfProgress: v })
+
+  // ── Estado local (no necesita persistir) ───────────────────────────────────
   const [proveedores, setProveedores] = useState([])
-  const [productos, setProductos] = useState([])
-
-  const [idProveedor, setIdProveedor] = useState('')
-  const [fecha, setFecha] = useState(new Date().toISOString().split('T')[0])
-  const [archivo, setArchivo] = useState(null)   // { name, tipo:'excel'|'pdf', sheets?, file? }
-  const [sheetSel, setSheetSel] = useState('')
-  const [headerRow, setHeaderRow] = useState(1)
-  const [loading, setLoading] = useState(false)
-
-  const [headers, setHeaders] = useState([])
-  const [mapping, setMapping] = useState({})
-  const [rows, setRows] = useState([])
-  const [saving, setSaving] = useState(false)
-
-  const [aiProcessing, setAiProcessing] = useState(false)
-  const [aiMessage, setAiMessage] = useState('')
-  const [pdfProgress, setPdfProgress] = useState('')
+  const [productos,   setProductos]   = useState([])
+  const [loading,     setLoading]     = useState(false)
+  const [saving,      setSaving]      = useState(false)
 
   const fileInputRef = useRef(null)
 
@@ -189,16 +199,18 @@ export default function ImportarLista() {
   const handleFileInput = async (e) => {
     const file = e.target.files?.[0]
     if (!file) return
-    e.target.value = '' // reset so same file can be re-selected
+    e.target.value = ''
     setLoading(true)
     setAiMessage('')
     try {
       const isPdf = file.name.toLowerCase().endsWith('.pdf')
       if (isPdf) {
-        setArchivo({ name: file.name, tipo: 'pdf', file })
+        fileRef.current = file  // guardamos el File real en el ref del context
+        setArchivo({ name: file.name, tipo: 'pdf' })
       } else {
         const sheets = await readExcelFile(file)
         const firstSheet = Object.keys(sheets)[0]
+        fileRef.current = file
         setArchivo({ name: file.name, tipo: 'excel', sheets })
         setSheetSel(firstSheet)
       }
@@ -209,7 +221,7 @@ export default function ImportarLista() {
 
   // ── Excel: load sheet → Step 2 ──────────────────────────────────────────────
   const handleLoadSheet = () => {
-    const rawRows = archivo.sheets[sheetSel]
+    const rawRows = archivo?.sheets?.[sheetSel]
     if (!rawRows || rawRows.length < headerRow) return
     const hdr = (rawRows[headerRow - 1] || []).map((h, i) => h ? String(h).trim() : `Col ${i + 1}`)
     setHeaders(hdr)
@@ -238,7 +250,7 @@ export default function ImportarLista() {
     setAiMessage('')
     setPdfProgress('Leyendo PDF...')
     try {
-      const lines = await extractPdfLines(archivo.file, (p, total) => {
+      const lines = await extractPdfLines(fileRef.current, (p, total) => {
         setPdfProgress(`Leyendo PDF... página ${p} de ${total}`)
       })
 
@@ -283,7 +295,7 @@ export default function ImportarLista() {
           }
         } else {
           // Can't detect — try from filename
-          const nombreArchivo = archivo.name.replace(/\.[^.]+$/, '').replace(/[\d_\-\.]/g, ' ').trim()
+          const nombreArchivo = archivo?.name.replace(/\.[^.]+$/, '').replace(/[\d_\-\.]/g, ' ').trim()
           const nuevoId = 'PROV' + String((await api.proveedores.getAll()).length + 1).padStart(3, '0')
           const nuevo = {
             id_proveedor: nuevoId,
@@ -326,7 +338,7 @@ export default function ImportarLista() {
         const pxm = precio && cantNum > 0 ? precio / cantNum : null
         return {
           fecha, id_proveedor: proveedorFinal, proveedor: provObj?.proveedor || proveedorFinal,
-          archivo_origen: archivo.name,
+          archivo_origen: archivo?.name,
           producto_original: r.producto?.trim() || null,
           presentacion_original: r.presentacion?.trim() || null,
           tipo_compra: 'UNIDAD', unidades_por_caja: 1,
@@ -349,7 +361,7 @@ export default function ImportarLista() {
 
   // ── Excel AI mapping ────────────────────────────────────────────────────────
   const handleAiMapping = async () => {
-    const rawRows = archivo.sheets[sheetSel]
+    const rawRows = archivo?.sheets?.[sheetSel]
     const sample = rawRows.slice(0, Math.min(headerRow + 5, rawRows.length))
     const sampleText = sample.map(r => r.join(' | ')).join('\n')
     setAiProcessing(true); setAiMessage('Detectando columnas con IA...')
@@ -376,7 +388,7 @@ Respondé SOLO con JSON válido, sin texto extra:
 
   // ── Excel: build rows from mapping ─────────────────────────────────────────
   const handleBuildRows = () => {
-    const rawRows = archivo.sheets[sheetSel]
+    const rawRows = archivo?.sheets?.[sheetSel]
     const dataRows = rawRows.slice(headerRow)
     const provObj = proveedores.find(p => p.id_proveedor === idProveedor)
     const built = dataRows
@@ -401,7 +413,7 @@ Respondé SOLO con JSON válido, sin texto extra:
         }
         return {
           fecha, id_proveedor: idProveedor, proveedor: provObj?.proveedor || idProveedor,
-          archivo_origen: archivo.name,
+          archivo_origen: archivo?.name,
           producto_original: get('producto_original') ? String(get('producto_original')).trim() : null,
           presentacion_original: get('presentacion_original') ? String(get('presentacion_original')).trim() : null,
           tipo_compra: tipo, unidades_por_caja: cajas, cantidad_por_unidad: cantNum,
@@ -451,17 +463,38 @@ Respondé SOLO con JSON: {"0":"COD001","1":null,...} usando el índice de cada i
     } finally { setAiProcessing(false) }
   }
 
+  // Feature 3: versionado — detect if rows already exist for this proveedor
+  const [versionDialog, setVersionDialog] = useState(null) // null | 'pending'
+
   const handleSave = async () => {
     if (!rows.length) return
+    // Check if there are already listas rows from this proveedor
+    const todas = await api.listas.getAll()
+    const existentes = todas.filter(l => l.id_proveedor === idProveedor)
+    if (existentes.length > 0) {
+      setVersionDialog('pending')
+      return
+    }
     setSaving(true)
     try { await api.listas.insertMany(rows); setStep(4) }
     finally { setSaving(false) }
   }
 
-  const resetAll = () => {
-    setStep(1); setArchivo(null); setSheetSel(''); setHeaders([])
-    setMapping({}); setRows([]); setAiMessage(''); setPdfProgress(''); setIdProveedor('')
+  const handleVersionChoice = async (choice) => {
+    setVersionDialog(null)
+    setSaving(true)
+    try {
+      if (choice === 'actualizar') {
+        // Archive existing rows for this proveedor (mark activo=0), then insert new
+        await api.listas.archiveByProveedor(idProveedor)
+      }
+      // Both choices insert the new rows (actualizar replaces old ones; historial keeps both)
+      await api.listas.insertMany(rows)
+      setStep(4)
+    } finally { setSaving(false) }
   }
+
+  const resetAll = () => resetContext()
 
   const okCount = rows.filter(r => r.estado_match === 'OK').length
   const pendCount = rows.filter(r => r.estado_match === 'PENDIENTE').length
@@ -541,7 +574,7 @@ Respondé SOLO con JSON: {"0":"COD001","1":null,...} usando el índice de cada i
                 ) : (
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', background: isPdf ? '#fef3f2' : '#f0fdf4', borderRadius: '6px', border: `1px solid ${isPdf ? '#fca5a5' : '#a7f3d0'}` }}>
                     <span>{isPdf ? '📄' : '📊'}</span>
-                    <span style={{ fontWeight: 500 }}>{archivo.name}</span>
+                    <span style={{ fontWeight: 500 }}>{archivo?.name}</span>
                     <span className="badge" style={{ background: isPdf ? '#fee2e2' : '#dcfce7', color: isPdf ? '#b91c1c' : '#166534', fontWeight: 600 }}>
                       {isPdf ? 'PDF' : 'Excel'}
                     </span>
@@ -556,7 +589,7 @@ Respondé SOLO con JSON: {"0":"COD001","1":null,...} usando el índice de cada i
                   <div className="form-group">
                     <label className="form-label">Hoja</label>
                     <select className="form-select" value={sheetSel} onChange={e => setSheetSel(e.target.value)}>
-                      {Object.keys(archivo.sheets).map(s => <option key={s} value={s}>{s}</option>)}
+                      {Object.keys(archivo?.sheets).map(s => <option key={s} value={s}>{s}</option>)}
                     </select>
                   </div>
                   <div className="form-group">
@@ -628,7 +661,7 @@ Respondé SOLO con JSON: {"0":"COD001","1":null,...} usando el índice de cada i
               {!aiProcessing && !aiMessage && (
                 <>
                   <div style={{ fontSize: '48px', marginBottom: '16px' }}>🤖</div>
-                  <p style={{ marginBottom: '8px', fontWeight: 600 }}>Listo para procesar <strong>{archivo.name}</strong></p>
+                  <p style={{ marginBottom: '8px', fontWeight: 600 }}>Listo para procesar <strong>{archivo?.name}</strong></p>
                   {idProveedor && (
                     <p style={{ marginBottom: '8px', fontSize: '13px' }}>
                       Proveedor: <strong>{proveedores.find(p => p.id_proveedor === idProveedor)?.proveedor || idProveedor}</strong>
@@ -739,6 +772,57 @@ Respondé SOLO con JSON: {"0":"COD001","1":null,...} usando el índice de cada i
           </div>
         )}
       </div>
+
+      {/* ── Feature 3: Version dialog ─────────────────────────────────────── */}
+      {versionDialog === 'pending' && createPortal(
+        <div className="modal-overlay">
+          <div className="modal" style={{ maxWidth: '480px' }}>
+            <div className="modal-header">
+              <h3>⚠️ Ya existen precios de este proveedor</h3>
+            </div>
+            <div className="modal-body">
+              <p style={{ marginBottom: '16px', color: 'var(--text-muted)', fontSize: '14px' }}>
+                Ya hay listas cargadas para este proveedor. ¿Qué querés hacer con los datos nuevos?
+              </p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <button
+                  className="btn btn-primary"
+                  style={{ textAlign: 'left', padding: '14px 16px' }}
+                  onClick={() => handleVersionChoice('actualizar')}
+                  disabled={saving}
+                >
+                  <div style={{ fontWeight: 700, marginBottom: '4px' }}>🔄 Actualizar precios</div>
+                  <div style={{ fontSize: '12px', opacity: 0.85, fontWeight: 400 }}>
+                    Marca los precios anteriores como inactivos y guarda los nuevos como vigentes.
+                    El comparador mostrará solo los precios actuales.
+                  </div>
+                </button>
+                <button
+                  className="btn btn-secondary"
+                  style={{ textAlign: 'left', padding: '14px 16px' }}
+                  onClick={() => handleVersionChoice('historial')}
+                  disabled={saving}
+                >
+                  <div style={{ fontWeight: 700, marginBottom: '4px' }}>📅 Agregar como historial</div>
+                  <div style={{ fontSize: '12px', opacity: 0.85, fontWeight: 400 }}>
+                    Guarda los nuevos precios junto a los anteriores. Útil para ver la evolución histórica en el Comparador.
+                  </div>
+                </button>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button
+                className="btn btn-ghost"
+                onClick={() => setVersionDialog(null)}
+                disabled={saving}
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
     </>
   )
 }

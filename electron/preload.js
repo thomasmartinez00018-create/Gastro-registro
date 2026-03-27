@@ -22,6 +22,7 @@ contextBridge.exposeInMainWorld('api', {
     updateMatch: (data) => ipcRenderer.invoke('listas:updateMatch', data),
     delete: (id) => ipcRenderer.invoke('listas:delete', id),
     deleteByProveedor: (id_prov) => ipcRenderer.invoke('listas:deleteByProveedor', id_prov),
+    archiveByProveedor: (id_prov) => ipcRenderer.invoke('listas:archiveByProveedor', id_prov),
   },
   // Equivalencias
   equivalencias: {

@@ -114,6 +114,11 @@ const listas = {
     set('listas', get('listas').filter(i => i.id_proveedor !== id_proveedor))
     return true
   },
+  // Feature 3: mark all existing rows for this proveedor as inactive (activo=0)
+  archiveByProveedor: async (id_proveedor) => {
+    set('listas', get('listas').map(i => i.id_proveedor === id_proveedor ? { ...i, activo: 0 } : i))
+    return true
+  },
 }
 
 // ── Equivalencias ─────────────────────────────────────────────────────────────

@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 
 import api from "../api"
+import { callAI } from '../ai'
 
 const CATEGORIAS = ['Aceites','Aderezos','Almacén','Bebidas','Carnes','Embutidos','Especias','Frutas','Harinas','Lácteos','Legumbres','Limpieza','Mariscos','Panificados','Pescados','Secos','Verduras','Otros']
 const UNIDADES = ['kg','g','litro','ml','unidad','docena','bulto','caja','bidon','lata','bolsa','paquete','rollo','metro']
@@ -24,6 +26,8 @@ function autoCode(nombre, categoria) {
   return prefix
 }
 
+const fmt = (n) => n != null ? `$${Number(n).toLocaleString('es-AR', { maximumFractionDigits: 2 })}` : '—'
+
 export default function Productos() {
   const [items, setItems] = useState([])
   const [search, setSearch] = useState('')
@@ -44,6 +48,17 @@ export default function Productos() {
   const barcodeRef = useRef(null)
   const [barcodeActive, setBarcodeActive] = useState(false)
   const [barcodeVal, setBarcodeVal] = useState('')
+
+  // Feature 2: price comparison modal
+  const [preciosModal, setPreciosModal] = useState(null) // { producto: item, rows: [] } | null
+  const [preciosLoading, setPreciosLoading] = useState(false)
+
+  // Feature 5: AI categorization modal
+  const [aiCatModal, setAiCatModal] = useState(false)
+  const [aiCatResults, setAiCatResults] = useState([]) // [{ item, suggestedCat, suggestedUnidad, selected }]
+  const [aiCatLoading, setAiCatLoading] = useState(false)
+  const [aiCatApplying, setAiCatApplying] = useState(false)
+  const [aiCatMessage, setAiCatMessage] = useState('')
 
   const load = async () => setItems(await api.productos.getAll())
   useEffect(() => { load() }, [])
@@ -78,6 +93,99 @@ export default function Productos() {
     )
     if (found) { openEdit(found); setBarcodeVal('') }
     else { alert(`Código "${code}" no encontrado en el sistema.`); setBarcodeVal('') }
+  }
+
+  // ── Feature 2: Ver precios ───────────────────────────────────────────────────
+  const handleVerPrecios = async (item) => {
+    setPreciosLoading(true)
+    setPreciosModal({ producto: item, rows: [] })
+    try {
+      const todasListas = await api.listas.getAll()
+      const rows = todasListas
+        .filter(l => l.codigo_producto === item.codigo && l.estado_match === 'OK')
+        .sort((a, b) => (a.precio_por_medida_base ?? Infinity) - (b.precio_por_medida_base ?? Infinity))
+      setPreciosModal({ producto: item, rows })
+    } finally {
+      setPreciosLoading(false)
+    }
+  }
+
+  const closePreciosModal = () => setPreciosModal(null)
+
+  // ── Feature 5: AI categorization ────────────────────────────────────────────
+  const itemsWithoutCat = items.filter(i => !i.categoria)
+
+  const handleOpenAiCat = () => {
+    setAiCatResults([])
+    setAiCatMessage('')
+    setAiCatModal(true)
+  }
+
+  const handleRunAiCat = async () => {
+    setAiCatLoading(true)
+    setAiCatMessage('Analizando productos con IA...')
+    setAiCatResults([])
+    const BATCH = 30
+    const allResults = []
+    try {
+      for (let i = 0; i < itemsWithoutCat.length; i += BATCH) {
+        const batch = itemsWithoutCat.slice(i, i + BATCH)
+        setAiCatMessage(`Procesando productos ${i + 1}–${Math.min(i + BATCH, itemsWithoutCat.length)} de ${itemsWithoutCat.length}...`)
+        const listaTexto = batch.map((p, idx) => `${idx}: "${p.producto}" (unidad_base: ${p.unidad_base || '?'})`).join('\n')
+        const text = await callAI([{
+          role: 'user',
+          content: `Sos un asistente de gestión gastronómica argentina. Para cada producto, sugerí la categoría más apropiada de la lista y la unidad base correcta.
+
+CATEGORÍAS DISPONIBLES: ${CATEGORIAS.join(', ')}
+UNIDADES DISPONIBLES: ${UNIDADES.join(', ')}
+
+PRODUCTOS:
+${listaTexto}
+
+Respondé SOLO con JSON válido, sin texto extra:
+[{"idx":0,"categoria":"Categoría","unidad_base":"unidad"},...]`
+        }], 1200)
+        const match = text.match(/\[[\s\S]*\]/)
+        if (match) {
+          const parsed = JSON.parse(match[0])
+          parsed.forEach(r => {
+            if (r.idx != null && batch[r.idx]) {
+              allResults.push({
+                item: batch[r.idx],
+                suggestedCat: r.categoria || '',
+                suggestedUnidad: r.unidad_base || '',
+                selected: true,
+              })
+            }
+          })
+        }
+      }
+      setAiCatResults(allResults)
+      setAiCatMessage(`✅ IA sugirió categorías para ${allResults.length} productos. Revisá y confirmá.`)
+    } catch (err) {
+      setAiCatMessage('Error al procesar con IA: ' + err.message)
+    } finally {
+      setAiCatLoading(false)
+    }
+  }
+
+  const handleAiCatConfirm = async () => {
+    const toUpdate = aiCatResults.filter(r => r.selected)
+    if (!toUpdate.length) return
+    setAiCatApplying(true)
+    try {
+      for (const r of toUpdate) {
+        await api.productos.update({
+          ...r.item,
+          categoria: r.suggestedCat || r.item.categoria,
+          unidad_base: r.suggestedUnidad || r.item.unidad_base,
+        })
+      }
+      await load()
+      setAiCatModal(false)
+    } finally {
+      setAiCatApplying(false)
+    }
   }
 
   // ── Maxirest import ──────────────────────────────────────────────────────────
@@ -180,7 +288,13 @@ export default function Productos() {
           <h2>Productos</h2>
           <p>Base maestra de insumos con códigos alfanuméricos propios</p>
         </div>
-        <div style={{ display: 'flex', gap: '8px' }}>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          {/* Feature 5: AI categorize button — only shown when there are products without category */}
+          {itemsWithoutCat.length > 0 && (
+            <button className="btn btn-accent btn-sm" onClick={handleOpenAiCat} title={`${itemsWithoutCat.length} productos sin categoría`}>
+              🤖 Categorizar con IA ({itemsWithoutCat.length})
+            </button>
+          )}
           <button className="btn btn-secondary" onClick={() => { setBarcodeActive(v => !v) }}>
             {barcodeActive ? '✕ Cerrar escáner' : '📷 Lector de código de barras'}
           </button>
@@ -263,6 +377,14 @@ export default function Productos() {
                       <td><span className={`badge ${item.activo ? 'badge-green' : 'badge-gray'}`}>{item.activo ? 'Activo' : 'Inactivo'}</span></td>
                       <td>
                         <div style={{ display: 'flex', gap: '4px' }}>
+                          {/* Feature 2: Ver precios button */}
+                          <button
+                            className="btn btn-ghost btn-sm"
+                            title="Ver precios de todos los proveedores"
+                            onClick={() => handleVerPrecios(item)}
+                          >
+                            💰
+                          </button>
                           <button className="btn btn-ghost btn-sm" onClick={() => openEdit(item)}>✏️</button>
                           <button className="btn btn-ghost btn-sm" onClick={() => handleDelete(item.id)}>🗑️</button>
                         </div>
@@ -518,7 +640,239 @@ export default function Productos() {
           </div>
         </div>
       )}
+
+      {/* ── Feature 2: Modal ver precios ──────────────────────────────────── */}
+      {preciosModal && createPortal(
+        <div className="modal-overlay" onClick={e => e.target === e.currentTarget && closePreciosModal()}>
+          <div className="modal modal-lg" style={{ width: '780px', maxHeight: '85vh' }}>
+            <div className="modal-header">
+              <div>
+                <h3>💰 Precios — {preciosModal.producto.producto}</h3>
+                <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                  Código: <span className="font-mono">{preciosModal.producto.codigo}</span>
+                  {preciosModal.producto.categoria && <> · Categoría: {preciosModal.producto.categoria}</>}
+                </div>
+              </div>
+              <button className="btn btn-ghost btn-sm" onClick={closePreciosModal}>✕</button>
+            </div>
+            <div className="modal-body">
+              {preciosLoading ? (
+                <div style={{ textAlign: 'center', padding: '32px', color: 'var(--text-muted)' }}>
+                  Cargando precios...
+                </div>
+              ) : preciosModal.rows.length === 0 ? (
+                <div className="empty-state">
+                  <div className="icon">💸</div>
+                  <p>No hay precios registrados para este producto.<br />
+                    Importá listas de proveedores y asignales este código en Equivalencias.</p>
+                </div>
+              ) : (
+                <>
+                  <div style={{ marginBottom: '10px', fontSize: '12px', color: 'var(--text-muted)' }}>
+                    {preciosModal.rows.length} registros · ordenados por precio/{preciosModal.producto.unidad_medida || 'medida'} asc · fila verde = más barato
+                  </div>
+                  <div className="table-wrapper">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Proveedor</th>
+                          <th>Presentación</th>
+                          <th>Precio informado</th>
+                          <th>
+                            ${preciosModal.producto.unidad_medida || 'medida'}
+                            <span
+                              title={`Precio normalizado a ${preciosModal.producto.unidad_medida || 'la unidad base'}. Permite comparar presentaciones distintas.`}
+                              style={{ marginLeft: '4px', cursor: 'help', color: 'var(--text-muted)' }}
+                            >ℹ</span>
+                          </th>
+                          <th>Fecha</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {preciosModal.rows.map((r, i) => {
+                          const minP = preciosModal.rows[0]?.precio_por_medida_base
+                          const isBest = r.precio_por_medida_base != null && r.precio_por_medida_base === minP
+                          return (
+                            <tr key={r.id || i} style={isBest ? { background: '#f0fdf4' } : {}}>
+                              <td style={{ fontWeight: 600 }}>
+                                {isBest && <span style={{ marginRight: '4px' }}>⭐</span>}
+                                {r.proveedor || r.id_proveedor}
+                              </td>
+                              <td className="text-muted">{r.presentacion_original || '—'}</td>
+                              <td>{fmt(r.precio_informado)}</td>
+                              <td>
+                                <span className={isBest ? 'best-price' : ''} style={{ fontWeight: isBest ? 700 : 400 }}>
+                                  {fmt(r.precio_por_medida_base)}
+                                  {isBest && <span style={{ marginLeft: '4px', fontSize: '10px', color: 'var(--primary)' }}>▼ mejor</span>}
+                                </span>
+                              </td>
+                              <td className="text-muted">{r.fecha || '—'}</td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={closePreciosModal}>Cerrar</button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* ── Feature 5: AI categorization modal ───────────────────────────── */}
+      {aiCatModal && createPortal(
+        <div className="modal-overlay" onClick={e => e.target === e.currentTarget && !aiCatLoading && !aiCatApplying && setAiCatModal(false)}>
+          <div className="modal modal-lg" style={{ width: '820px', maxHeight: '88vh' }}>
+            <div className="modal-header">
+              <div>
+                <h3>🤖 Categorizar productos con IA</h3>
+                <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                  {itemsWithoutCat.length} productos sin categoría
+                </div>
+              </div>
+              <button className="btn btn-ghost btn-sm" onClick={() => !aiCatLoading && !aiCatApplying && setAiCatModal(false)}>✕</button>
+            </div>
+            <div className="modal-body">
+              {aiCatResults.length === 0 ? (
+                <div>
+                  <div className="alert alert-info mb-3" style={{ fontSize: '13px' }}>
+                    La IA analizará <strong>{itemsWithoutCat.length} productos</strong> sin categoría y sugerirá la categoría y unidad base más apropiada para cada uno.
+                    Podés revisar y desseleccionar los que no querés aplicar.
+                  </div>
+                  <div style={{ maxHeight: '320px', overflowY: 'auto', border: '1px solid var(--border)', borderRadius: '6px' }}>
+                    <table style={{ fontSize: '12px' }}>
+                      <thead>
+                        <tr>
+                          <th>Código</th>
+                          <th>Producto</th>
+                          <th>Unidad base actual</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {itemsWithoutCat.map(i => (
+                          <tr key={i.id}>
+                            <td><span className="font-mono badge badge-blue">{i.codigo}</span></td>
+                            <td style={{ fontWeight: 500 }}>{i.producto}</td>
+                            <td className="text-muted">{i.unidad_base || '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  {aiCatMessage && (
+                    <div className="alert alert-info mt-3" style={{ fontSize: '12px' }}>{aiCatMessage}</div>
+                  )}
+                </div>
+              ) : (
+                <div>
+                  {aiCatMessage && (
+                    <div className="alert alert-info mb-3" style={{ fontSize: '12px' }}>{aiCatMessage}</div>
+                  )}
+                  <div style={{ display: 'flex', gap: '8px', marginBottom: '8px', alignItems: 'center' }}>
+                    <button
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => setAiCatResults(r => r.map(x => ({ ...x, selected: true })))}
+                    >
+                      Seleccionar todos
+                    </button>
+                    <button
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => setAiCatResults(r => r.map(x => ({ ...x, selected: false })))}
+                    >
+                      Deseleccionar todos
+                    </button>
+                    <span className="text-muted" style={{ fontSize: '12px' }}>
+                      {aiCatResults.filter(r => r.selected).length} de {aiCatResults.length} seleccionados
+                    </span>
+                  </div>
+                  <div style={{ maxHeight: '360px', overflowY: 'auto', border: '1px solid var(--border)', borderRadius: '6px' }}>
+                    <table style={{ fontSize: '12px' }}>
+                      <thead>
+                        <tr>
+                          <th style={{ width: '32px' }}></th>
+                          <th>Código</th>
+                          <th>Producto</th>
+                          <th>Categoría sugerida</th>
+                          <th>Unidad base sugerida</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {aiCatResults.map((r, idx) => (
+                          <tr key={r.item.id} style={r.selected ? {} : { opacity: 0.4 }}>
+                            <td>
+                              <input
+                                type="checkbox"
+                                checked={r.selected}
+                                onChange={e => setAiCatResults(prev => prev.map((x, i) => i === idx ? { ...x, selected: e.target.checked } : x))}
+                              />
+                            </td>
+                            <td><span className="font-mono badge badge-blue">{r.item.codigo}</span></td>
+                            <td style={{ fontWeight: 500 }}>{r.item.producto}</td>
+                            <td>
+                              <select
+                                className="form-select"
+                                style={{ fontSize: '12px', padding: '2px 6px' }}
+                                value={r.suggestedCat}
+                                onChange={e => setAiCatResults(prev => prev.map((x, i) => i === idx ? { ...x, suggestedCat: e.target.value } : x))}
+                              >
+                                <option value="">Sin categoría</option>
+                                {CATEGORIAS.map(c => <option key={c} value={c}>{c}</option>)}
+                              </select>
+                            </td>
+                            <td>
+                              <select
+                                className="form-select"
+                                style={{ fontSize: '12px', padding: '2px 6px' }}
+                                value={r.suggestedUnidad}
+                                onChange={e => setAiCatResults(prev => prev.map((x, i) => i === idx ? { ...x, suggestedUnidad: e.target.value } : x))}
+                              >
+                                <option value="">—</option>
+                                {UNIDADES.map(u => <option key={u} value={u}>{u}</option>)}
+                              </select>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="modal-footer">
+              <button
+                className="btn btn-secondary"
+                onClick={() => !aiCatLoading && !aiCatApplying && setAiCatModal(false)}
+                disabled={aiCatLoading || aiCatApplying}
+              >
+                Cancelar
+              </button>
+              {aiCatResults.length === 0 ? (
+                <button
+                  className="btn btn-primary"
+                  onClick={handleRunAiCat}
+                  disabled={aiCatLoading}
+                >
+                  {aiCatLoading ? 'Analizando...' : `🤖 Analizar ${itemsWithoutCat.length} productos`}
+                </button>
+              ) : (
+                <button
+                  className="btn btn-primary"
+                  onClick={handleAiCatConfirm}
+                  disabled={aiCatApplying || aiCatResults.filter(r => r.selected).length === 0}
+                >
+                  {aiCatApplying ? 'Aplicando...' : `✓ Aplicar a ${aiCatResults.filter(r => r.selected).length} productos`}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
     </>
   )
 }
-

@@ -80,6 +80,9 @@ function initDB() {
   const cols = db.prepare("PRAGMA table_info(productos)").all().map(c => c.name)
   if (!cols.includes('codigos_maxirest')) db.exec("ALTER TABLE productos ADD COLUMN codigos_maxirest TEXT")
   if (!cols.includes('rubro_maxirest')) db.exec("ALTER TABLE productos ADD COLUMN rubro_maxirest TEXT")
+  // Feature 3: add activo column to listas for versioning/archiving
+  const listasCols = db.prepare("PRAGMA table_info(listas)").all().map(c => c.name)
+  if (!listasCols.includes('activo')) db.exec("ALTER TABLE listas ADD COLUMN activo INTEGER DEFAULT 1")
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -182,6 +185,11 @@ ipcMain.handle('listas:delete', (_, id) => {
 })
 ipcMain.handle('listas:deleteByProveedor', (_, id_proveedor) => {
   db.prepare('DELETE FROM listas WHERE id_proveedor=?').run(id_proveedor)
+  return true
+})
+// Feature 3: archive (mark as inactive) all existing lista rows for a proveedor
+ipcMain.handle('listas:archiveByProveedor', (_, id_proveedor) => {
+  db.prepare('UPDATE listas SET activo=0 WHERE id_proveedor=?').run(id_proveedor)
   return true
 })
 
