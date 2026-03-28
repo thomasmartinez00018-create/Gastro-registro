@@ -3,8 +3,8 @@ name: Build Windows Installer
 on:
   push:
     tags:
-      - 'v*'          # Solo cuando hacés git tag v1.0.1 y push
-  workflow_dispatch:  # También podés correrlo manualmente
+      - 'v*'
+  workflow_dispatch:
 
 jobs:
   build:
@@ -19,8 +19,23 @@ jobs:
         with:
           node-version: '20'
 
+      - name: Instalar Python (para compilar módulos nativos)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Instalar Visual Studio Build Tools
+        run: npm install --global windows-build-tools --vs2019 || echo "build tools already available"
+        shell: pwsh
+        continue-on-error: true
+
       - name: Instalar dependencias
         run: npm install
+
+      - name: Recompilar módulos nativos para Electron
+        run: npx electron-rebuild --force --module-dir . -w better-sqlite3
+        env:
+          npm_config_msvs_version: '2019'
 
       - name: Build Vite (frontend)
         run: npx vite build
@@ -28,23 +43,24 @@ jobs:
           VITE_OPENAI_KEY: ${{ secrets.VITE_OPENAI_KEY }}
 
       - name: Package Electron (Windows .exe)
-        run: npx electron-builder --win --x64
+        run: npx electron-builder --win --x64 --config.npmRebuild=false
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Publicar Release en GitHub
         uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
         with:
           name: "Gestión Proveedores ${{ github.ref_name }}"
           body: |
-            ## Instalador Windows
+            ## 📦 Instalador Windows
 
-            Descargá el archivo `.exe` e instalalo con doble clic.
-            No requiere configuración adicional.
+            1. Descargá el archivo `.exe`
+            2. Doble clic para instalar
+            3. Abrí la app → **⚙️ Configuración** → ingresá tu OpenAI API key
 
-            **Requiere:** Windows 10 o superior (64 bits)
-          files: |
-            dist-electron/**/*.exe
+            **Requisitos:** Windows 10 o superior (64 bits)
+          files: dist-electron/**/*.exe
           draft: false
           prerelease: false
         env:
