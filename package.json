@@ -20,6 +20,7 @@
     "concurrently": "^8.2.2",
     "electron": "^29.1.4",
     "electron-builder": "^24.13.3",
+    "@electron/rebuild": "^3.6.0",
     "electron-rebuild": "^3.2.9",
     "vite": "^5.1.6",
     "wait-on": "^7.2.0"
@@ -35,8 +36,8 @@
     "files": [
       "dist/**/*",
       "electron/**/*",
-      "node_modules/**/*",
-      "!node_modules/.cache/**/*"
+      "node_modules/better-sqlite3/**/*",
+      "!node_modules/better-sqlite3/build/deps/**/*"
     ],
     "asar": true,
     "asarUnpack": [

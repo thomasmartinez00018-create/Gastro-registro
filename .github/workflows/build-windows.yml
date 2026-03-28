@@ -19,23 +19,13 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Instalar Python (para compilar módulos nativos)
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Instalar Visual Studio Build Tools
-        run: npm install --global windows-build-tools --vs2019 || echo "build tools already available"
-        shell: pwsh
-        continue-on-error: true
-
       - name: Instalar dependencias
         run: npm install
 
-      - name: Recompilar módulos nativos para Electron
-        run: npx electron-rebuild --force --module-dir . -w better-sqlite3
+      - name: Recompilar better-sqlite3 para Electron
+        run: npx @electron/rebuild -f -w better-sqlite3
         env:
-          npm_config_msvs_version: '2019'
+          npm_config_msvs_version: '2022'
 
       - name: Build Vite (frontend)
         run: npx vite build
@@ -46,6 +36,14 @@ jobs:
         run: npx electron-builder --win --x64 --config.npmRebuild=false
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DEBUG: "electron-builder"
+
+      - name: Listar archivos generados
+        if: always()
+        run: |
+          echo "=== dist-electron contents ==="
+          dir dist-electron /s /b 2>nul || echo "dist-electron not found"
+        shell: cmd
 
       - name: Publicar Release en GitHub
         uses: softprops/action-gh-release@v2
