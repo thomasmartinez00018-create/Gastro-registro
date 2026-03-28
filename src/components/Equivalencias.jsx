@@ -154,56 +154,72 @@ Reglas:
 
   const applyAI = async () => {
     setAiApplying(true)
-    const toApply = aiResults.filter(r => aiApproved.has(r.id))
+    try {
+      const toApply = aiResults.filter(r => aiApproved.has(r.id))
 
-    // Calcular próximos códigos por prefijo para nuevos productos
-    const fresh = await api.productos.getAll()
-    const countByPrefix = {}
-    for (const p of fresh) {
-      const prefix = p.codigo.replace(/\d+$/, '')
-      countByPrefix[prefix] = (countByPrefix[prefix] || 0) + 1
-    }
-
-    for (const item of toApply) {
-      if (item.codigo) {
-        // Match a producto existente
-        await api.listas.updateMatch({ id: item.id, codigo_producto: item.codigo, estado_match: 'OK' })
-        await api.equivalencias.create({
-          id_proveedor: item.id_proveedor,
-          producto_original: item.producto_original,
-          presentacion_original: item.presentacion_original,
-          codigo_producto: item.codigo,
-          comentarios: `IA automática (confianza: ${item.confianza})`,
-        })
-      } else if (item.nombre_sugerido) {
-        // Crear nuevo producto
-        const cat    = item.categoria || 'Otros'
-        const prefix = PREFIXES[cat] || cat.slice(0,3).toUpperCase()
+      // Calcular próximos códigos por prefijo para nuevos productos
+      const fresh = await api.productos.getAll()
+      const countByPrefix = {}
+      for (const p of fresh) {
+        const prefix = p.codigo.replace(/\d+$/, '')
         countByPrefix[prefix] = (countByPrefix[prefix] || 0) + 1
-        const codigo = `${prefix}${String(countByPrefix[prefix]).padStart(3,'0')}`
-
-        await api.productos.create({
-          codigo, producto: item.nombre_sugerido, categoria: cat,
-          unidad_base: item.unidad || 'kg', contenido_unitario: null,
-          unidad_medida: null, marca: '', alias: '', activo: 1,
-        })
-        await api.listas.updateMatch({ id: item.id, codigo_producto: codigo, estado_match: 'OK' })
-        await api.equivalencias.create({
-          id_proveedor: item.id_proveedor,
-          producto_original: item.producto_original,
-          presentacion_original: item.presentacion_original,
-          codigo_producto: codigo,
-          comentarios: 'Producto creado automáticamente por IA',
-        })
       }
-    }
 
-    await load()
-    setAiOpen(false)
-    setAiApplying(false)
-    setAiResults([])
-    setAiApproved(new Set())
-    setAiDone(false)
+      for (const item of toApply) {
+        if (item.codigo) {
+          // Match a producto existente
+          await api.listas.updateMatch({ id: item.id, codigo_producto: item.codigo, estado_match: 'OK' })
+          await api.equivalencias.create({
+            id_proveedor: item.id_proveedor,
+            producto_original: item.producto_original,
+            presentacion_original: item.presentacion_original,
+            codigo_producto: item.codigo,
+            comentarios: `IA automática (confianza: ${item.confianza})`,
+          })
+        } else if (item.nombre_sugerido) {
+          // Crear nuevo producto — incluir TODOS los campos requeridos por el schema
+          const cat    = item.categoria || 'Otros'
+          const prefix = PREFIXES[cat] || cat.slice(0,3).toUpperCase()
+          countByPrefix[prefix] = (countByPrefix[prefix] || 0) + 1
+          const codigo = `${prefix}${String(countByPrefix[prefix]).padStart(3,'0')}`
+
+          await api.productos.create({
+            codigo,
+            producto: item.nombre_sugerido,
+            categoria: cat,
+            marca: '',
+            unidad_base: item.unidad || 'kg',
+            contenido_unitario: null,
+            unidad_medida: null,
+            presentacion_referencia: '',
+            alias: '',
+            codigos_maxirest: null,
+            rubro_maxirest: '',
+            activo: 1,
+          })
+          await api.listas.updateMatch({ id: item.id, codigo_producto: codigo, estado_match: 'OK' })
+          await api.equivalencias.create({
+            id_proveedor: item.id_proveedor,
+            producto_original: item.producto_original,
+            presentacion_original: item.presentacion_original,
+            codigo_producto: codigo,
+            comentarios: 'Producto creado automáticamente por IA',
+          })
+        }
+      }
+
+      await load()
+      setAiOpen(false)
+      setAiResults([])
+      setAiApproved(new Set())
+      setAiDone(false)
+    } catch (err) {
+      // Mostrar el error en el modal sin dejar al usuario bloqueado
+      setAiProgress({ current: 0, total: 0, msg: `❌ Error al guardar: ${err.message}` })
+      console.error('[applyAI]', err)
+    } finally {
+      setAiApplying(false)
+    }
   }
 
   // ── Datos derivados ───────────────────────────────────────────────────────
