@@ -33,10 +33,7 @@ jobs:
           VITE_OPENAI_KEY: ${{ secrets.VITE_OPENAI_KEY }}
 
       - name: Package Electron (Windows .exe)
-        run: npx electron-builder --win --x64 --config.npmRebuild=false
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          DEBUG: "electron-builder"
+        run: npx electron-builder --win --x64 --config.npmRebuild=false --publish never
 
       - name: Listar archivos generados
         if: always()
