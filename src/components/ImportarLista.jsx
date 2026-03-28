@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import * as pdfjsLib from 'pdfjs-dist'
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import api from '../api'
-import { AI_MODEL } from '../config'
+import { AI_MODEL, getAIKey } from '../config'
 import { callAI } from '../ai'
 import { useImport } from '../ImportContext'
 import { parsePresentacion } from '../utils/presentacion'
@@ -552,10 +552,33 @@ Respondé SOLO con JSON: {"0":"COD001","1":null,...} usando el índice de cada i
           ))}
         </div>
 
+        {/* Banner: sin API key */}
+        {!getAIKey() && (
+          <div style={{
+            background: '#fff3cd', border: '1px solid #ffc107', borderRadius: '10px',
+            padding: '12px 16px', marginBottom: '14px', fontSize: '13px',
+            display: 'flex', gap: '10px', alignItems: 'center'
+          }}>
+            <span style={{ fontSize: '18px' }}>⚠️</span>
+            <div>
+              <strong>Sin API key configurada — </strong>
+              las funciones de IA no funcionarán.{' '}
+              <span
+                style={{ color: 'var(--accent)', cursor: 'pointer', textDecoration: 'underline', fontWeight: 600 }}
+                onClick={() => window._navigateTo?.('configuracion')}
+              >
+                Ir a Configuración →
+              </span>
+            </div>
+          </div>
+        )}
+
         {/* AI badge */}
-        <div className="alert alert-info mb-3" style={{ fontSize: '12px', padding: '8px 14px' }}>
-          🤖 <strong>IA activada</strong> — Detecta columnas en Excel y extrae productos de PDFs automáticamente ({AI_MODEL})
-        </div>
+        {getAIKey() && (
+          <div className="alert alert-info mb-3" style={{ fontSize: '12px', padding: '8px 14px' }}>
+            🤖 <strong>IA activada</strong> — Detecta columnas en Excel y extrae productos de PDFs automáticamente ({AI_MODEL})
+          </div>
+        )}
 
         {/* ── STEP 1 ─────────────────────────────────────────────────────────── */}
         {step === 1 && (

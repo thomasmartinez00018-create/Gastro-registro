@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { ImportProvider, useImport } from './ImportContext'
 import Dashboard     from './components/Dashboard'
 import Productos     from './components/Productos'
@@ -6,12 +6,14 @@ import Proveedores   from './components/Proveedores'
 import ImportarLista from './components/ImportarLista'
 import Equivalencias from './components/Equivalencias'
 import Comparador    from './components/Comparador'
+import Configuracion from './components/Configuracion'
 
 const SECTIONS = [
   {
     title: 'General',
     items: [
       { id: 'dashboard',     label: 'Inicio',          icon: '⌂'  },
+      { id: 'configuracion', label: 'Configuración',    icon: '⚙️' },
     ]
   },
   {
@@ -38,6 +40,7 @@ const SECTIONS = [
 
 const PAGES = {
   dashboard:     Dashboard,
+  configuracion: Configuracion,
   productos:     Productos,
   proveedores:   Proveedores,
   importar:      ImportarLista,
@@ -50,6 +53,9 @@ function AppInner() {
   const [page, setPage] = useState('dashboard')
   const { job } = useImport()
   const Page = PAGES[page] || Dashboard
+
+  // Exponemos navegación globalmente para que componentes hijos puedan navegar
+  useEffect(() => { window._navigateTo = setPage }, [setPage])
 
   return (
     <div className="app-layout">
