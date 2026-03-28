@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
+import * as XLSX from 'xlsx'
 import * as pdfjsLib from 'pdfjs-dist'
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import api from '../api'
@@ -24,7 +25,6 @@ const CAMPOS = [
 
 // ── Excel parsing (browser/renderer, no IPC needed) ───────────────────────────
 async function readExcelFile(file) {
-  const XLSX = await import('xlsx')
   const ab = await file.arrayBuffer()
   const wb = XLSX.read(ab, { type: 'array' })
   const sheets = {}

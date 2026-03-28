@@ -36,13 +36,11 @@
     "files": [
       "dist/**/*",
       "electron/**/*",
-      "node_modules/better-sqlite3/**/*",
-      "!node_modules/better-sqlite3/build/deps/**/*"
+      "node_modules/**/*",
+      "!node_modules/.cache/**/*",
+      "!node_modules/.vite/**/*"
     ],
-    "asar": true,
-    "asarUnpack": [
-      "node_modules/better-sqlite3/**/*"
-    ],
+    "asar": false,
     "win": {
       "target": [
         {
