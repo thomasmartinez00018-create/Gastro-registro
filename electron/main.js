@@ -1,8 +1,27 @@
-const { app, BrowserWindow, ipcMain, dialog } = require('electron')
+const { app, BrowserWindow, ipcMain, dialog, protocol, net } = require('electron')
 const path = require('path')
 const fs = require('fs')
 
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged
+
+// Permitir carga de archivos locales (necesario para PDF.js worker en Windows)
+app.commandLine.appendSwitch('allow-file-access-from-files')
+app.commandLine.appendSwitch('disable-web-security')
+
+// Registrar protocolo app:// antes de que la app esté lista
+// Esto evita restricciones de file:// para ES module workers (PDF.js)
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: 'app',
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      allowServiceWorkers: true,
+      corsEnabled: false,
+    },
+  },
+])
 
 // ─── Database setup ───────────────────────────────────────────────────────────
 let db
@@ -382,13 +401,23 @@ function createWindow() {
   if (isDev) {
     win.loadURL('http://localhost:5173')
   } else {
-    win.loadFile(path.join(__dirname, '../dist/index.html'))
+    // Usar protocolo app:// en vez de file:// para que PDF.js worker
+    // pueda cargarse sin restricciones de same-origin
+    win.loadURL('app://index.html')
   }
 
   win.once('ready-to-show', () => win.show())
 }
 
 app.whenReady().then(() => {
+  // Registrar protocolo app:// para servir los archivos del dist
+  // Esto reemplaza file:// y evita restricciones de ES module workers
+  protocol.handle('app', (request) => {
+    const url = request.url.replace('app://', '')
+    const filePath = path.join(__dirname, '../dist', url)
+    return net.fetch('file://' + filePath)
+  })
+
   initDB()
   createWindow()
   app.on('activate', () => {

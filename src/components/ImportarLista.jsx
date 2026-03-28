@@ -2,15 +2,18 @@ import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import * as XLSX from 'xlsx'
 import * as pdfjsLib from 'pdfjs-dist'
-import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import api from '../api'
 import { AI_MODEL, getAIKey } from '../config'
 import { callAI } from '../ai'
 import { useImport } from '../ImportContext'
 import { parsePresentacion } from '../utils/presentacion'
 
-// PDF.js worker — usa archivo local, no CDN (funciona sin internet)
-pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl
+// PDF.js worker — new URL() hace que Vite resuelva la ruta correctamente
+// tanto en dev (http://) como en producción Electron (app://)
+pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+  'pdfjs-dist/build/pdf.worker.min.mjs',
+  import.meta.url
+).toString()
 
 const CAMPOS = [
   { key: 'producto_original', label: 'Descripción del producto', required: true },
