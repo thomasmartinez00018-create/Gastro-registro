@@ -453,9 +453,10 @@ Respondé SOLO con JSON válido, sin texto extra:
       </div>
 
       {/* ── Edit/New modal ─────────────────────────────────────────────────── */}
-      {modal && (
-        <div className="modal-overlay" onClick={e => e.target === e.currentTarget && closeModal()}>
-          <div className="modal modal-lg">
+      {modal && createPortal(
+        <div className="modal-overlay" onClick={e => e.target === e.currentTarget && closeModal()}
+          onKeyDown={e => { if (e.key === 'Escape') closeModal() }}>
+          <div className="modal modal-lg" role="dialog" aria-modal="true">
             <div className="modal-header">
               <h3>{modal === 'edit' ? 'Editar producto' : 'Nuevo producto'}</h3>
               <button className="btn btn-ghost btn-sm" onClick={closeModal}>✕</button>
@@ -465,6 +466,7 @@ Respondé SOLO con JSON válido, sin texto extra:
                 <div className="form-group">
                   <label className="form-label">Código propio *</label>
                   <input className="form-input font-mono" placeholder="Ej: PES001" value={form.codigo}
+                    autoFocus
                     onChange={e => setForm(f => ({ ...f, codigo: e.target.value.toUpperCase() }))} />
                   <div className="text-muted mt-1">Código alfanumérico interno del sistema (independiente de Maxirest)</div>
                 </div>
@@ -547,7 +549,8 @@ Respondé SOLO con JSON válido, sin texto extra:
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* ── Maxirest import wizard ─────────────────────────────────────────── */}
@@ -808,52 +811,78 @@ Respondé SOLO con JSON válido, sin texto extra:
                     ({dupGroups.reduce((n, g) => n + g.items.length - 1, 0)} registros en total).
                     El sistema pre-seleccionó el producto con más datos completos.
                   </div>
-                  <div style={{ maxHeight: '440px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                    {dupGroups.map(g => (
-                      <div key={g.key} style={{ border: '1px solid var(--border)', borderRadius: '8px', overflow: 'hidden' }}>
+                  <div style={{ maxHeight: '460px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '12px', paddingRight: '4px' }}>
+                    {dupGroups.map((g, gi) => (
+                      <div key={g.key} style={{ border: '1px solid var(--border)', borderRadius: '10px', overflow: 'hidden' }}>
+                        {/* Cabecera del grupo */}
                         <div style={{
-                          background: '#f8fafc', padding: '8px 14px', fontSize: '11px', fontWeight: 700,
-                          textTransform: 'uppercase', letterSpacing: '.06em', color: 'var(--text-muted)',
+                          background: 'var(--surface-2)', padding: '9px 14px',
+                          display: 'flex', alignItems: 'center', gap: '8px',
                           borderBottom: '1px solid var(--border)'
                         }}>
-                          {g.items[0].producto} · {g.items.length} registros
+                          <span style={{
+                            background: 'var(--accent)', color: '#fff',
+                            borderRadius: '999px', fontSize: '11px', fontWeight: 700,
+                            padding: '1px 8px', minWidth: '22px', textAlign: 'center'
+                          }}>{gi + 1}</span>
+                          <span style={{ fontWeight: 700, fontSize: '13px' }}>{g.items[0].producto}</span>
+                          <span style={{ color: 'var(--text-muted)', fontSize: '12px', marginLeft: 'auto' }}>
+                            {g.items.length} registros · conservar 1 · eliminar {g.items.length - 1}
+                          </span>
                         </div>
-                        <table style={{ fontSize: '12px' }}>
-                          <thead>
-                            <tr>
-                              <th style={{ width: '40px', textAlign: 'center' }}>✓</th>
-                              <th>Código</th>
-                              <th>Nombre</th>
-                              <th>Categoría</th>
-                              <th>Unidad</th>
-                              <th>Cód. Maxirest</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {g.items.map(item => {
-                              const isKeep = dupKeep[g.key] === item.id
-                              return (
-                                <tr key={item.id} style={isKeep ? { background: '#f0fdf4' } : { opacity: 0.55 }}>
-                                  <td style={{ textAlign: 'center' }}>
-                                    <input
-                                      type="radio"
-                                      name={`dup-${g.key}`}
-                                      checked={isKeep}
-                                      onChange={() => setDupKeep(prev => ({ ...prev, [g.key]: item.id }))}
-                                    />
-                                  </td>
-                                  <td><span className="font-mono badge badge-blue">{item.codigo}</span></td>
-                                  <td style={{ fontWeight: isKeep ? 700 : 400 }}>{item.producto}</td>
-                                  <td className="text-muted">{item.categoria || '—'}</td>
-                                  <td className="text-muted">{item.unidad_base || '—'}</td>
-                                  <td className="text-muted font-mono" style={{ fontSize: '11px' }}>
-                                    {item.codigos_maxirest || '—'}
-                                  </td>
-                                </tr>
-                              )
-                            })}
-                          </tbody>
-                        </table>
+                        {/* Filas de productos */}
+                        <div style={{ display: 'flex', flexDirection: 'column' }}>
+                          {g.items.map((item, idx) => {
+                            const isKeep = dupKeep[g.key] === item.id
+                            return (
+                              <label key={item.id} style={{
+                                display: 'flex', alignItems: 'center', gap: '12px',
+                                padding: '10px 14px', cursor: 'pointer',
+                                background: isKeep ? 'rgba(16,185,129,0.07)' : idx % 2 === 0 ? 'transparent' : 'var(--surface-2)',
+                                borderLeft: isKeep ? '3px solid #10b981' : '3px solid transparent',
+                                borderBottom: idx < g.items.length - 1 ? '1px solid var(--border-light)' : 'none',
+                                transition: 'background 0.15s',
+                              }}>
+                                <input
+                                  type="radio"
+                                  name={`dup-${g.key}`}
+                                  checked={isKeep}
+                                  onChange={() => setDupKeep(prev => ({ ...prev, [g.key]: item.id }))}
+                                  style={{ accentColor: '#10b981', width: '16px', height: '16px', flexShrink: 0 }}
+                                />
+                                <span style={{
+                                  fontFamily: 'monospace', fontSize: '12px', fontWeight: 700,
+                                  background: isKeep ? 'rgba(16,185,129,0.15)' : 'var(--surface-2)',
+                                  color: isKeep ? '#10b981' : 'var(--text-muted)',
+                                  padding: '2px 7px', borderRadius: '4px', minWidth: '64px', textAlign: 'center'
+                                }}>{item.codigo}</span>
+                                <span style={{
+                                  flex: 1, fontSize: '13px',
+                                  fontWeight: isKeep ? 700 : 400,
+                                  color: isKeep ? 'var(--text)' : 'var(--text-muted)',
+                                  textDecoration: isKeep ? 'none' : 'line-through',
+                                  textDecorationColor: 'var(--text-muted)',
+                                }}>{item.producto}</span>
+                                <span style={{ fontSize: '12px', color: 'var(--text-muted)', minWidth: '80px' }}>
+                                  {item.categoria || '—'}
+                                </span>
+                                <span style={{ fontSize: '12px', color: 'var(--text-muted)', minWidth: '50px' }}>
+                                  {item.unidad_base || '—'}
+                                </span>
+                                {item.codigos_maxirest && (
+                                  <span style={{ fontSize: '11px', fontFamily: 'monospace', color: 'var(--text-muted)' }}>
+                                    MX: {item.codigos_maxirest}
+                                  </span>
+                                )}
+                                {isKeep && (
+                                  <span style={{ fontSize: '11px', color: '#10b981', fontWeight: 700, marginLeft: 'auto' }}>
+                                    CONSERVAR
+                                  </span>
+                                )}
+                              </label>
+                            )
+                          })}
+                        </div>
                       </div>
                     ))}
                   </div>

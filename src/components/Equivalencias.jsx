@@ -14,6 +14,26 @@ const PREFIXES = {
 }
 const CATEGORIAS = Object.keys(PREFIXES)
 
+const buildPrompt = (prodList, itemList) => `Sos un experto en insumos gastronómicos de Argentina.
+Tenés que identificar a qué producto interno corresponde cada producto de proveedor.
+
+PRODUCTOS INTERNOS (CODIGO|NOMBRE|CATEGORIA):
+${prodList}
+
+PRODUCTOS DE PROVEEDOR (IDX|NOMBRE|PRESENTACIÓN|PROVEEDOR):
+${itemList}
+
+Respondé ÚNICAMENTE con JSON válido (sin markdown ni texto extra):
+[
+  {"idx":0,"codigo":"LAC001","confianza":"alta"},
+  {"idx":1,"codigo":null,"nombre_sugerido":"Queso Parmesano","categoria":"Lácteos","unidad":"kg"}
+]
+
+Reglas:
+- Si el producto del proveedor es claramente el mismo insumo que uno interno → ponés su codigo
+- Si no existe en la lista interna → codigo:null, nombre_sugerido genérico (sin marca), categoria de: ${CATEGORIAS.join(', ')}, unidad (kg/litro/unidad/g/ml)
+- confianza: "alta" (muy seguro), "media" (razonablemente seguro), "baja" (con dudas)`
+
 const CONFIANZA_BADGE = {
   alta:  { bg: 'rgba(16,185,129,0.18)',  color: '#6ee7b7', label: '● Alta'  },
   media: { bg: 'rgba(245,158,11,0.18)',  color: '#fcd34d', label: '● Media' },
@@ -30,13 +50,14 @@ export default function Equivalencias() {
   const [page,      setPage]      = useState(0)
 
   // ── AI modal ──────────────────────────────────────────────────────────────
-  const [aiOpen,     setAiOpen]     = useState(false)
-  const [aiLoading,  setAiLoading]  = useState(false)
-  const [aiProgress, setAiProgress] = useState({ current: 0, total: 0, msg: '' })
-  const [aiResults,  setAiResults]  = useState([])
-  const [aiApproved, setAiApproved] = useState(new Set())
-  const [aiApplying, setAiApplying] = useState(false)
-  const [aiDone,     setAiDone]     = useState(false)
+  const [aiOpen,        setAiOpen]        = useState(false)
+  const [aiLoading,     setAiLoading]     = useState(false)
+  const [aiProgress,    setAiProgress]    = useState({ current: 0, total: 0, msg: '' })
+  const [aiResults,     setAiResults]     = useState([])
+  const [aiApproved,    setAiApproved]    = useState(new Set())
+  const [aiApplying,    setAiApplying]    = useState(false)
+  const [aiDone,        setAiDone]        = useState(false)
+  const [aiPassSummary, setAiPassSummary] = useState(null) // { pasadas, resueltos, noResueltos }
 
   const load = useCallback(async () => {
     const [l, p] = await Promise.all([api.listas.getAll(), api.productos.getAll()])
@@ -69,7 +90,7 @@ export default function Equivalencias() {
     }
   }
 
-  // ── IA: auto-equivalencias ────────────────────────────────────────────────
+  // ── IA: auto-equivalencias (multi-pasada hasta llegar a 0) ────────────────
   const runAI = async () => {
     const pendientes = listas.filter(l => l.estado_match === 'PENDIENTE')
     if (!pendientes.length) return
@@ -79,6 +100,7 @@ export default function Equivalencias() {
     setAiDone(false)
     setAiResults([])
     setAiApproved(new Set())
+    setAiPassSummary(null)
 
     const prodList = productos
       .map(p => `${p.codigo}|${p.producto}|${p.categoria || 'Otros'}`)
@@ -100,28 +122,8 @@ export default function Equivalencias() {
         .map((it, i) => `${i}|${it.producto_original}|${it.presentacion_original || ''}|${it.id_proveedor || ''}`)
         .join('\n')
 
-      const prompt = `Sos un experto en insumos gastronómicos de Argentina.
-Tenés que identificar a qué producto interno corresponde cada producto de proveedor.
-
-PRODUCTOS INTERNOS (CODIGO|NOMBRE|CATEGORIA):
-${prodList}
-
-PRODUCTOS DE PROVEEDOR (IDX|NOMBRE|PRESENTACIÓN|PROVEEDOR):
-${itemList}
-
-Respondé ÚNICAMENTE con JSON válido (sin markdown ni texto extra):
-[
-  {"idx":0,"codigo":"LAC001","confianza":"alta"},
-  {"idx":1,"codigo":null,"nombre_sugerido":"Queso Parmesano","categoria":"Lácteos","unidad":"kg"}
-]
-
-Reglas:
-- Si el producto del proveedor es claramente el mismo insumo que uno interno → ponés su codigo
-- Si no existe en la lista interna → codigo:null, nombre_sugerido genérico (sin marca), categoria de: ${CATEGORIAS.join(', ')}, unidad (kg/litro/unidad/g/ml)
-- confianza: "alta" (muy seguro), "media" (razonablemente seguro), "baja" (con dudas)`
-
       try {
-        const resp = await callAI([{ role: 'user', content: prompt }], 3000)
+        const resp = await callAI([{ role: 'user', content: buildPrompt(prodList, itemList) }], 3000)
         const clean = resp.replace(/```json\n?/g,'').replace(/```\n?/g,'').trim()
         const parsed = JSON.parse(clean)
         for (const m of parsed) {
@@ -152,69 +154,123 @@ Reglas:
   const selectAll   = () => setAiApproved(new Set(aiResults.filter(r => !r._aiError && (r.codigo || r.nombre_sugerido)).map(r => r.id)))
   const deselectAll = () => setAiApproved(new Set())
 
+  // Guarda un lote de resultados aprobados y devuelve cuántos se resolvieron
+  const saveResults = async (toApply) => {
+    const fresh = await api.productos.getAll()
+    const countByPrefix = {}
+    for (const p of fresh) {
+      const prefix = p.codigo.replace(/\d+$/, '')
+      countByPrefix[prefix] = (countByPrefix[prefix] || 0) + 1
+    }
+    let resueltos = 0
+    for (const item of toApply) {
+      if (item.codigo) {
+        await api.listas.updateMatch({ id: item.id, codigo_producto: item.codigo, estado_match: 'OK' })
+        await api.equivalencias.create({
+          id_proveedor: item.id_proveedor,
+          producto_original: item.producto_original,
+          presentacion_original: item.presentacion_original,
+          codigo_producto: item.codigo,
+          comentarios: `IA automática (confianza: ${item.confianza})`,
+        })
+        resueltos++
+      } else if (item.nombre_sugerido) {
+        const cat    = item.categoria || 'Otros'
+        const prefix = PREFIXES[cat] || cat.slice(0,3).toUpperCase()
+        countByPrefix[prefix] = (countByPrefix[prefix] || 0) + 1
+        const codigo = `${prefix}${String(countByPrefix[prefix]).padStart(3,'0')}`
+        await api.productos.create({
+          codigo, producto: item.nombre_sugerido, categoria: cat,
+          marca: '', unidad_base: item.unidad || 'kg',
+          contenido_unitario: null, unidad_medida: null,
+          presentacion_referencia: '', alias: '',
+          codigos_maxirest: null, rubro_maxirest: '', activo: 1,
+        })
+        await api.listas.updateMatch({ id: item.id, codigo_producto: codigo, estado_match: 'OK' })
+        await api.equivalencias.create({
+          id_proveedor: item.id_proveedor,
+          producto_original: item.producto_original,
+          presentacion_original: item.presentacion_original,
+          codigo_producto: codigo,
+          comentarios: 'Producto creado automáticamente por IA',
+        })
+        resueltos++
+      }
+    }
+    return resueltos
+  }
+
+  // Aplica los resultados aprobados y luego sigue con pasadas automáticas
+  // hasta que no queden PENDIENTE o se alcancen MAX_PASSES pasadas
   const applyAI = async () => {
+    const MAX_PASSES = 5
     setAiApplying(true)
     try {
+      // Pasada 0 — guardar lo que el usuario aprobó en la vista de revisión
       const toApply = aiResults.filter(r => aiApproved.has(r.id))
-
-      // Calcular próximos códigos por prefijo para nuevos productos
-      const fresh = await api.productos.getAll()
-      const countByPrefix = {}
-      for (const p of fresh) {
-        const prefix = p.codigo.replace(/\d+$/, '')
-        countByPrefix[prefix] = (countByPrefix[prefix] || 0) + 1
-      }
-
-      for (const item of toApply) {
-        if (item.codigo) {
-          // Match a producto existente
-          await api.listas.updateMatch({ id: item.id, codigo_producto: item.codigo, estado_match: 'OK' })
-          await api.equivalencias.create({
-            id_proveedor: item.id_proveedor,
-            producto_original: item.producto_original,
-            presentacion_original: item.presentacion_original,
-            codigo_producto: item.codigo,
-            comentarios: `IA automática (confianza: ${item.confianza})`,
-          })
-        } else if (item.nombre_sugerido) {
-          // Crear nuevo producto — incluir TODOS los campos requeridos por el schema
-          const cat    = item.categoria || 'Otros'
-          const prefix = PREFIXES[cat] || cat.slice(0,3).toUpperCase()
-          countByPrefix[prefix] = (countByPrefix[prefix] || 0) + 1
-          const codigo = `${prefix}${String(countByPrefix[prefix]).padStart(3,'0')}`
-
-          await api.productos.create({
-            codigo,
-            producto: item.nombre_sugerido,
-            categoria: cat,
-            marca: '',
-            unidad_base: item.unidad || 'kg',
-            contenido_unitario: null,
-            unidad_medida: null,
-            presentacion_referencia: '',
-            alias: '',
-            codigos_maxirest: null,
-            rubro_maxirest: '',
-            activo: 1,
-          })
-          await api.listas.updateMatch({ id: item.id, codigo_producto: codigo, estado_match: 'OK' })
-          await api.equivalencias.create({
-            id_proveedor: item.id_proveedor,
-            producto_original: item.producto_original,
-            presentacion_original: item.presentacion_original,
-            codigo_producto: codigo,
-            comentarios: 'Producto creado automáticamente por IA',
-          })
-        }
-      }
-
+      await saveResults(toApply)
       await load()
-      setAiOpen(false)
+
+      // Pasadas automáticas adicionales
+      let pass = 1
+      let totalResueltos = toApply.filter(r => r.codigo || r.nombre_sugerido).length
+      let pendientesRestantes = 0
+
+      while (pass < MAX_PASSES) {
+        // Refrescar listas desde la API para ver qué quedó PENDIENTE
+        const allListas = await api.listas.getAll()
+        const activos   = allListas.filter(l => l.activo !== 0)
+        const pendientes = activos.filter(l => l.estado_match === 'PENDIENTE')
+        pendientesRestantes = pendientes.length
+        if (!pendientes.length) break
+
+        pass++
+        setAiProgress({
+          current: pass, total: MAX_PASSES,
+          msg: `Pasada ${pass}: procesando ${pendientes.length} pendientes restantes…`,
+        })
+
+        // Re-cargar lista de productos (puede haber nuevos creados en pasada anterior)
+        const prodActuales = await api.productos.getAll()
+        const prodList = prodActuales
+          .map(p => `${p.codigo}|${p.producto}|${p.categoria || 'Otros'}`)
+          .join('\n')
+
+        const BATCH = 20
+        const passResults = []
+        for (let b = 0; b < pendientes.length; b += BATCH) {
+          const batch = pendientes.slice(b, b + BATCH)
+          const itemList = batch
+            .map((it, i) => `${i}|${it.producto_original}|${it.presentacion_original || ''}|${it.id_proveedor || ''}`)
+            .join('\n')
+          const prompt = buildPrompt(prodList, itemList)
+          try {
+            const resp = await callAI([{ role: 'user', content: prompt }], 3000)
+            const clean = resp.replace(/```json\n?/g,'').replace(/```\n?/g,'').trim()
+            const parsed = JSON.parse(clean)
+            for (const m of parsed) {
+              if (typeof m.idx === 'number' && m.idx >= 0 && m.idx < batch.length)
+                passResults.push({ ...batch[m.idx], ...m })
+            }
+          } catch { /* ignorar errores de batch */ }
+        }
+
+        // Auto-aprobar todos (ya pasaron la primera revisión manual)
+        const approved = passResults.filter(r => !r._aiError && (r.codigo || r.nombre_sugerido))
+        const saved = await saveResults(approved)
+        totalResueltos += saved
+        await load()
+      }
+
+      // Calcular cuántos quedaron sin resolver
+      const allFinal = await api.listas.getAll()
+      const sinResolver = allFinal.filter(l => l.activo !== 0 && l.estado_match === 'PENDIENTE').length
+
+      setAiPassSummary({ pasadas: pass, resueltos: totalResueltos, noResueltos: sinResolver })
       setAiResults([])
       setAiApproved(new Set())
-      setAiDone(false)
+      setAiDone(true)
     } catch (err) {
-      // Mostrar el error en el modal sin dejar al usuario bloqueado
       setAiProgress({ current: 0, total: 0, msg: `❌ Error al guardar: ${err.message}` })
       console.error('[applyAI]', err)
     } finally {
@@ -526,11 +582,47 @@ Reglas:
               </>
             )}
 
-            {/* Aplicando */}
+            {/* Aplicando / multi-pasada */}
             {aiApplying && (
               <div style={{ padding:'56px 24px', textAlign:'center' }}>
                 <div style={{ fontSize:'36px', marginBottom:'12px' }}>💾</div>
-                <div style={{ color:'#94a3b8', fontSize:'15px' }}>Guardando equivalencias…</div>
+                <div style={{ color:'#94a3b8', fontSize:'15px', marginBottom: '10px' }}>
+                  {aiProgress.msg || 'Guardando equivalencias…'}
+                </div>
+                {aiProgress.total > 0 && (
+                  <div style={{ background:'rgba(255,255,255,0.08)', borderRadius:'999px', height:'6px', maxWidth:'360px', margin:'0 auto', overflow:'hidden' }}>
+                    <div style={{
+                      background:'#10b981', height:'100%', borderRadius:'999px', transition:'width 0.4s ease',
+                      width: `${(aiProgress.current / aiProgress.total) * 100}%`
+                    }} />
+                  </div>
+                )}
+                {aiProgress.msg?.includes('Pasada') && (
+                  <div style={{ marginTop:'10px', color:'#64748b', fontSize:'12px' }}>
+                    El proceso continúa automáticamente hasta resolver todos los pendientes
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Resumen final luego de múltiples pasadas */}
+            {aiDone && aiPassSummary && !aiApplying && (
+              <div style={{ padding:'48px 24px', textAlign:'center' }}>
+                <div style={{ fontSize:'48px', marginBottom:'12px' }}>✅</div>
+                <div style={{ color:'#f1f5f9', fontSize:'17px', fontWeight:700, marginBottom:'8px' }}>
+                  Proceso completado en {aiPassSummary.pasadas} pasada{aiPassSummary.pasadas !== 1 ? 's' : ''}
+                </div>
+                <div style={{ color:'#94a3b8', fontSize:'14px', marginBottom:'24px' }}>
+                  <span style={{ color:'#10b981', fontWeight:600 }}>{aiPassSummary.resueltos} productos</span> resueltos
+                  {aiPassSummary.noResueltos > 0 && (
+                    <span> · <span style={{ color:'#f59e0b', fontWeight:600 }}>{aiPassSummary.noResueltos} sin resolver</span> (revisión manual sugerida)</span>
+                  )}
+                </div>
+                <button
+                  onClick={() => { setAiOpen(false); setAiDone(false); setAiPassSummary(null) }}
+                  style={{ background:'#10b981', border:'none', color:'#fff', borderRadius:'8px', padding:'10px 28px', cursor:'pointer', fontSize:'14px', fontWeight:600 }}>
+                  Cerrar
+                </button>
               </div>
             )}
           </div>
