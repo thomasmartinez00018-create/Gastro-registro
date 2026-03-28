@@ -1,27 +1,60 @@
-const { app, BrowserWindow, ipcMain, dialog, protocol, net } = require('electron')
+const { app, BrowserWindow, ipcMain, dialog } = require('electron')
 const path = require('path')
 const fs = require('fs')
+const http = require('http')
 
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged
 
-// Permitir carga de archivos locales (necesario para PDF.js worker en Windows)
-app.commandLine.appendSwitch('allow-file-access-from-files')
-app.commandLine.appendSwitch('disable-web-security')
+// ── Mini servidor HTTP local para producción ──────────────────────────────────
+// Sirve los archivos de dist/ sobre http://localhost:<puerto>
+// Esto evita todas las restricciones de file:// (ES module workers de PDF.js, etc.)
+const MIME = {
+  '.html': 'text/html; charset=utf-8',
+  '.js':   'application/javascript',
+  '.mjs':  'application/javascript',
+  '.css':  'text/css',
+  '.json': 'application/json',
+  '.ico':  'image/x-icon',
+  '.png':  'image/png',
+  '.svg':  'image/svg+xml',
+  '.woff2':'font/woff2',
+  '.woff': 'font/woff',
+  '.ttf':  'font/ttf',
+}
 
-// Registrar protocolo app:// antes de que la app esté lista
-// Esto evita restricciones de file:// para ES module workers (PDF.js)
-protocol.registerSchemesAsPrivileged([
-  {
-    scheme: 'app',
-    privileges: {
-      standard: true,
-      secure: true,
-      supportFetchAPI: true,
-      allowServiceWorkers: true,
-      corsEnabled: false,
-    },
-  },
-])
+function startLocalServer(distPath) {
+  return new Promise((resolve) => {
+    const server = http.createServer((req, res) => {
+      // Quitar query strings y fragmentos
+      let urlPath = req.url.split('?')[0].split('#')[0]
+      if (urlPath === '/') urlPath = '/index.html'
+
+      let filePath = path.join(distPath, urlPath)
+
+      // SPA fallback: si no existe el archivo, servir index.html
+      if (!fs.existsSync(filePath)) {
+        filePath = path.join(distPath, 'index.html')
+      }
+
+      const ext = path.extname(filePath).toLowerCase()
+      const mime = MIME[ext] || 'application/octet-stream'
+
+      try {
+        const data = fs.readFileSync(filePath)
+        res.writeHead(200, { 'Content-Type': mime })
+        res.end(data)
+      } catch {
+        res.writeHead(404)
+        res.end('Not found')
+      }
+    })
+
+    // Puerto 0 = sistema elige un puerto libre automáticamente
+    server.listen(0, '127.0.0.1', () => {
+      resolve(server.address().port)
+    })
+  })
+}
 
 // ─── Database setup ───────────────────────────────────────────────────────────
 let db
@@ -383,7 +416,7 @@ ipcMain.handle('dialog:saveFile', async (_, { defaultName }) => {
 })
 
 // ─── Window ───────────────────────────────────────────────────────────────────
-function createWindow() {
+function createWindow(port) {
   const win = new BrowserWindow({
     width: 1280,
     height: 800,
@@ -401,27 +434,27 @@ function createWindow() {
   if (isDev) {
     win.loadURL('http://localhost:5173')
   } else {
-    // Usar protocolo app:// en vez de file:// para que PDF.js worker
-    // pueda cargarse sin restricciones de same-origin
-    win.loadURL('app://index.html')
+    // Usar servidor HTTP local → evita restricciones de file://
+    // (PDF.js ESM workers, dynamic imports, etc.)
+    win.loadURL(`http://localhost:${port}`)
   }
 
   win.once('ready-to-show', () => win.show())
 }
 
-app.whenReady().then(() => {
-  // Registrar protocolo app:// para servir los archivos del dist
-  // Esto reemplaza file:// y evita restricciones de ES module workers
-  protocol.handle('app', (request) => {
-    const url = request.url.replace('app://', '')
-    const filePath = path.join(__dirname, '../dist', url)
-    return net.fetch('file://' + filePath)
-  })
-
+app.whenReady().then(async () => {
   initDB()
-  createWindow()
+
+  let port = null
+  if (!isDev) {
+    const distPath = path.join(__dirname, '../dist')
+    port = await startLocalServer(distPath)
+  }
+
+  createWindow(port)
+
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    if (BrowserWindow.getAllWindows().length === 0) createWindow(port)
   })
 })
 
