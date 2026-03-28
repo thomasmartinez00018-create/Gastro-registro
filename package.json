@@ -9,7 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "better-sqlite3": "^9.4.3",
+    "better-sqlite3": "^12.8.0",
     "pdfjs-dist": "^4.9.155",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
