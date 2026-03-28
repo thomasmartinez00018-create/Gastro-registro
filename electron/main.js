@@ -434,12 +434,27 @@ function createWindow(port) {
   if (isDev) {
     win.loadURL('http://localhost:5173')
   } else {
-    // Usar servidor HTTP local → evita restricciones de file://
-    // (PDF.js ESM workers, dynamic imports, etc.)
     win.loadURL(`http://localhost:${port}`)
   }
 
   win.once('ready-to-show', () => win.show())
+
+  // Ctrl+Shift+I abre DevTools en cualquier versión (dev o producción)
+  // Sirve para depurar errores en Windows sin necesidad de recompilar
+  const { globalShortcut } = require('electron')
+  win.webContents.on('before-input-event', (event, input) => {
+    if (input.control && input.shift && input.key === 'I') {
+      win.webContents.toggleDevTools()
+    }
+  })
+
+  // Capturar errores del renderer y mostrarlos en consola del main process
+  win.webContents.on('render-process-gone', (event, details) => {
+    console.error('[Renderer crash]', details)
+  })
+  win.webContents.on('did-fail-load', (event, code, desc, url) => {
+    console.error('[Load fail]', code, desc, url)
+  })
 }
 
 app.whenReady().then(async () => {

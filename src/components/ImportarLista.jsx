@@ -2,18 +2,16 @@ import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import * as XLSX from 'xlsx'
 import * as pdfjsLib from 'pdfjs-dist'
+import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import api from '../api'
 import { AI_MODEL, getAIKey } from '../config'
 import { callAI } from '../ai'
 import { useImport } from '../ImportContext'
 import { parsePresentacion } from '../utils/presentacion'
 
-// PDF.js worker — new URL() hace que Vite resuelva la ruta correctamente
-// tanto en dev (http://) como en producción Electron (app://)
-pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-  'pdfjs-dist/build/pdf.worker.min.mjs',
-  import.meta.url
-).toString()
+// PDF.js worker — ?url hace que Vite copie el archivo a dist/assets y
+// devuelva una URL relativa al index.html (funciona con http:// en producción)
+pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl
 
 const CAMPOS = [
   { key: 'producto_original', label: 'Descripción del producto', required: true },
@@ -40,7 +38,22 @@ async function readExcelFile(file) {
 // ── PDF text extraction with column separation ────────────────────────────────
 async function extractPdfLines(file, onProgress) {
   const ab = await file.arrayBuffer()
-  const pdf = await pdfjsLib.getDocument({ data: ab }).promise
+
+  // Timeout de 15s — si el worker no carga, falla con mensaje claro
+  const loadingTask = pdfjsLib.getDocument({ data: ab })
+  const pdf = await Promise.race([
+    loadingTask.promise,
+    new Promise((_, reject) =>
+      setTimeout(() => {
+        loadingTask.destroy?.()
+        reject(new Error(
+          `PDF.js worker no cargó (timeout 15s).\n` +
+          `workerSrc: ${pdfjsLib.GlobalWorkerOptions.workerSrc}\n` +
+          `Verificá la consola (Ctrl+Shift+I) para más detalles.`
+        ))
+      }, 15000)
+    ),
+  ])
   const allLines = []
 
   for (let p = 1; p <= pdf.numPages; p++) {
