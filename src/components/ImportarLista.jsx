@@ -2,15 +2,23 @@ import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import * as XLSX from 'xlsx'
 import * as pdfjsLib from 'pdfjs-dist'
-import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
+import workerUrl from '../pdf-worker-with-polyfill.js?worker&url'
 import api from '../api'
 import { AI_MODEL, getAIKey } from '../config'
 import { callAI } from '../ai'
 import { useImport } from '../ImportContext'
 import { parsePresentacion } from '../utils/presentacion'
 
-// PDF.js worker — ?url hace que Vite copie el archivo a dist/assets y
-// devuelva una URL relativa al index.html (funciona con http:// en producción)
+// Polyfill Promise.try en el hilo principal (para Electron < 32 / Chromium < 127)
+if (typeof Promise.try === 'undefined') {
+  Promise.try = function (fn) {
+    return new Promise(function (resolve, reject) {
+      try { resolve(fn()) } catch (e) { reject(e) }
+    })
+  }
+}
+
+// Worker con polyfill inyectado — Vite lo compila como módulo separado
 pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl
 
 const CAMPOS = [

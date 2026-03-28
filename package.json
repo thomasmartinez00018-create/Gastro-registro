@@ -10,17 +10,17 @@
   },
   "dependencies": {
     "better-sqlite3": "^9.4.3",
-    "pdfjs-dist": "^5.5.207",
+    "pdfjs-dist": "^4.9.155",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
+    "@electron/rebuild": "^3.6.0",
     "@vitejs/plugin-react": "^4.2.1",
     "concurrently": "^8.2.2",
-    "electron": "^29.1.4",
+    "electron": "^32.0.0",
     "electron-builder": "^24.13.3",
-    "@electron/rebuild": "^3.6.0",
     "electron-rebuild": "^3.2.9",
     "vite": "^5.1.6",
     "wait-on": "^7.2.0"
