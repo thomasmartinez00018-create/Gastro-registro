@@ -271,8 +271,12 @@ export default function Equivalencias() {
       setAiApproved(new Set())
       setAiDone(true)
     } catch (err) {
-      setAiProgress({ current: 0, total: 0, msg: `❌ Error al guardar: ${err.message}` })
+      // En error: mostrar mensaje y volver a la pantalla de resultados (permite reintentar)
       console.error('[applyAI]', err)
+      setAiProgress({ current: 0, total: 0, msg: '' })
+      // Si ya no quedan resultados en el state (se borraron antes del error), restaurar estado de error
+      setAiPassSummary(null)
+      alert(`❌ Error al guardar equivalencias:\n${err.message}\n\nPodés intentar de nuevo.`)
     } finally {
       setAiApplying(false)
     }
@@ -475,8 +479,8 @@ export default function Equivalencias() {
               </div>
             )}
 
-            {/* Resultados */}
-            {aiDone && !aiApplying && (
+            {/* Resultados — sólo cuando no se aplicaron todavía (sin resumen) */}
+            {aiDone && !aiApplying && !aiPassSummary && aiResults.length > 0 && (
               <>
                 {/* Controles */}
                 <div style={{ padding:'12px 20px', borderBottom:'1px solid rgba(255,255,255,0.08)', display:'flex', gap:'8px', alignItems:'center', flexWrap:'wrap', background:'rgba(255,255,255,0.02)' }}>
@@ -606,7 +610,7 @@ export default function Equivalencias() {
             )}
 
             {/* Resumen final luego de múltiples pasadas */}
-            {aiDone && aiPassSummary && !aiApplying && (
+            {!aiApplying && !!aiPassSummary && (
               <div style={{ padding:'48px 24px', textAlign:'center' }}>
                 <div style={{ fontSize:'48px', marginBottom:'12px' }}>✅</div>
                 <div style={{ color:'#f1f5f9', fontSize:'17px', fontWeight:700, marginBottom:'8px' }}>

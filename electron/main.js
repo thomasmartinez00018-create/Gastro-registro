@@ -417,6 +417,54 @@ ipcMain.handle('maxirest:exportarComparativa', async (_, { rows, outputPath }) =
   return savePath
 })
 
+// Export comparativa selección: 2 hojas (Resumen + Detalle)
+ipcMain.handle('comparador:exportarSeleccion', async (_, { grupos, outputPath, conImpuestos }) => {
+  const XLSX = require('xlsx')
+  const wb   = XLSX.utils.book_new()
+
+  // ── Hoja 1: Resumen ──────────────────────────────────────────────────────────
+  const resumenData = [['Código','Producto','Categoría','Mejor precio','Proveedor (mejor precio)','Unidad base','Diferencia %']]
+  for (const g of grupos) {
+    const precios = g.proveedores.map(r => r.precio_por_medida).filter(p => p != null && p > 0)
+    const minP = precios.length ? Math.min(...precios) : null
+    const maxP = precios.length ? Math.max(...precios) : null
+    const mejorProv = g.proveedores.find(r => r.precio_por_medida === minP)
+    const diff = minP && maxP && maxP > minP ? ((maxP - minP) / maxP * 100).toFixed(1) + '%' : ''
+    resumenData.push([
+      g.codigo, g.producto, g.categoria,
+      minP != null ? Number(minP.toFixed(2)) : '',
+      mejorProv?.proveedor || '',
+      g.unidad_base, diff,
+    ])
+  }
+  const wsRes = XLSX.utils.aoa_to_sheet(resumenData)
+  wsRes['!cols'] = [10,30,15,14,24,10,10].map(w => ({ wch: w }))
+  XLSX.utils.book_append_sheet(wb, wsRes, 'Resumen')
+
+  // ── Hoja 2: Detalle por producto ─────────────────────────────────────────────
+  const label = conImpuestos ? 'Precio/medida c/imp' : 'Precio/medida'
+  const detalleData = [['Código','Producto','Categoría','Proveedor','Presentación','Tipo','Precio lista',label,'Unidad','Fecha']]
+  for (const g of grupos) {
+    for (const r of g.proveedores) {
+      detalleData.push([
+        g.codigo, g.producto, g.categoria,
+        r.proveedor, r.presentacion, r.tipo_compra,
+        r.precio_lista    != null ? Number(Number(r.precio_lista).toFixed(2))    : '',
+        r.precio_por_medida != null ? Number(Number(r.precio_por_medida).toFixed(2)) : '',
+        g.unidad_base, r.fecha,
+      ])
+    }
+    detalleData.push(Array(10).fill(''))   // separador entre productos
+  }
+  const wsDet = XLSX.utils.aoa_to_sheet(detalleData)
+  wsDet['!cols'] = [10,28,14,22,18,8,13,16,8,10].map(w => ({ wch: w }))
+  XLSX.utils.book_append_sheet(wb, wsDet, 'Detalle por producto')
+
+  const savePath = outputPath || path.join(app.getPath('downloads'), `comparativa_${Date.now()}.xlsx`)
+  XLSX.writeFile(wb, savePath)
+  return savePath
+})
+
 ipcMain.handle('dialog:saveFile', async (_, { defaultName }) => {
   const result = await dialog.showSaveDialog({
     defaultPath: defaultName || 'exportar.xlsx',
