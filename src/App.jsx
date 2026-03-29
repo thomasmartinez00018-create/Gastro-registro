@@ -6,7 +6,7 @@ import Proveedores   from './components/Proveedores'
 import ImportarLista from './components/ImportarLista'
 import Equivalencias from './components/Equivalencias'
 import Comparador    from './components/Comparador'
-import Configuracion from './components/Configuracion'
+import Configuracion, { loadAppSettings, applyTheme } from './components/Configuracion'
 
 const SECTIONS = [
   {
@@ -54,8 +54,31 @@ function AppInner() {
   const { job } = useImport()
   const Page = PAGES[page] || Dashboard
 
+  // Personalización
+  const [appSettings, setAppSettings] = useState({ restaurantName: '', logoBase64: '', theme: 'gastronomica' })
+
+  // Aplicar tema y cargar configuración al iniciar
+  useEffect(() => {
+    const s = loadAppSettings()
+    setAppSettings(s)
+    applyTheme(s.theme || 'gastronomica')
+  }, [])
+
+  // Escuchar cambios de configuración en tiempo real
+  useEffect(() => {
+    const handler = (e) => {
+      const s = e.detail
+      setAppSettings(s)
+      applyTheme(s.theme || 'gastronomica')
+    }
+    window.addEventListener('app-settings-changed', handler)
+    return () => window.removeEventListener('app-settings-changed', handler)
+  }, [])
+
   // Exponemos navegación globalmente para que componentes hijos puedan navegar
   useEffect(() => { window._navigateTo = setPage }, [setPage])
+
+  const { restaurantName, logoBase64 } = appSettings
 
   return (
     <div className="app-layout">
@@ -63,10 +86,25 @@ function AppInner() {
       {/* ── Sidebar ──────────────────────────────────────────────────────── */}
       <aside className="sidebar">
 
-        {/* Logo */}
+        {/* Logo / Identidad */}
         <div className="sidebar-logo">
-          <div className="sidebar-logo-icon">🍴</div>
-          <h1>Gestión de<br/>Proveedores</h1>
+          {logoBase64 ? (
+            <img
+              src={logoBase64}
+              alt="Logo"
+              style={{
+                width: '48px', height: '48px', objectFit: 'contain',
+                borderRadius: '10px',
+                marginBottom: '8px',
+                background: 'rgba(255,255,255,0.08)',
+              }}
+            />
+          ) : (
+            <div className="sidebar-logo-icon">🍴</div>
+          )}
+          <h1 style={{ wordBreak: 'break-word', textAlign: 'center' }}>
+            {restaurantName || 'Gestión de\nProveedores'}
+          </h1>
           <p>Sistema gastronómico</p>
         </div>
 
@@ -104,7 +142,7 @@ function AppInner() {
 
         {/* Footer */}
         <div className="sidebar-footer">
-          <span className="sidebar-footer-badge">v1.0</span>
+          <span className="sidebar-footer-badge">v1.2</span>
           <span className="sidebar-footer-text">
             {job.aiProcessing ? '⏳ Procesando…' : 'Gastronomía'}
           </span>

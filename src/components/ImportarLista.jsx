@@ -110,24 +110,43 @@ async function parsePdfChunks(lines, onChunk) {
     try {
       const text = await callAI([{
         role: 'user',
-        content: `Sos un asistente de gestión gastronómica argentina. Extraé productos de esta lista de precios.
-Cada producto tiene formato: NOMBRE PRESENTACIÓN/UNIDAD PRECIO
-Ejemplos de formato:
-- "BARRA DANBO LA PAULINA KG SIN TACC KG. 9.000,00"
-- "BURRATA MOZZARI X 250 GRS UD. 8.053,39"
-- "CREMA DE LECHE LA PAULINA BALDE X 5LT 44% Balde x 5 lts 43.287,24"
-Los precios usan formato argentino: 17.007,31 = 17007.31 (punto=miles, coma=decimal)
-Las unidades pueden ser: KG., UD., LT., Bolsa x N kg, Caja x N uds, Balde x N lts, Pack x N u, etc.
+        content: `Sos un experto en listas de precios de proveedores gastronómicos argentinos.
+Tu tarea: extraer productos con nombre, presentación y precio de este fragmento de lista.
+
+REGLAS DE PRECIOS:
+- Formato argentino: 17.007,31 → 17007.31 (punto=miles, coma=decimal)
+- Si ves "$17.007,31" o "$ 17.007" tratalo igual
+- Si el precio parece por encima de $5.000.000 o por debajo de $1, marcalo como sospechoso
+
+REGLAS DE PRESENTACIÓN Y UNIDADES (MUY IMPORTANTES):
+- "x 250 GRS" o "250 gr" o "250 grs" → presentacion:"x 250 GRS", la IA NO convierte a kg, lo hace el sistema
+- "1/2 kg" o "1/2KG" → presentacion:"x 500 GRS"  (1/2 kg = 500 g)
+- "1/4 kg" → presentacion:"x 250 GRS"
+- "x 5 LT" o "5 lts" o "5 litros" → presentacion:"x 5 LT"
+- "x 12 UN" o "x12 uds" o "caja x 12" → tipo_compra:"CAJA", presentacion:"Caja x 12 UN"
+- "KG." al final → vendido por kg (cantidad libre), presentacion:"KG"
+- "UD." o "UN." al final → unidad, presentacion:"UN"
+- Si la cantidad/unidad es ambigua o no clara → ambiguo:true
+
+EJEMPLOS DE PRODUCTOS REALES:
+- "BARRA DANBO LA PAULINA SIN TACC KG. 9.000,00" → {producto:"Barra Danbo La Paulina Sin TACC", presentacion:"KG", precio:9000}
+- "BURRATA MOZZARI X 250 GRS 8.053,39" → {producto:"Burrata Mozzari", presentacion:"x 250 GRS", precio:8053.39}
+- "CREMA DE LECHE LA PAULINA BALDE X 5LT 43.287,24" → {producto:"Crema de Leche La Paulina", presentacion:"Balde x 5 LT", precio:43287.24}
+- "ACEITE GIRASOL COCINERO 1/2 LT 2.150,00" → {producto:"Aceite Girasol Cocinero", presentacion:"x 500 ML", precio:2150}
+- "LOMO BOVINO $ 12.500 kg" → {producto:"Lomo Bovino", presentacion:"KG", precio:12500}
+- "LATA TOMATE TRITURADO X 12 UN 18.400,00" → {producto:"Tomate Triturado en Lata", presentacion:"Caja x 12 UN", precio:18400}
+
+QUÉ OMITIR:
+- Encabezados de categoría: "QUESOS Y FIAMBRES", "CARNES", "LÁCTEOS", etc.
+- Líneas de totales, IVA, subtotales
+- Líneas sin precio reconocible
+- Promociones o notas aclaratorias
 
 TEXTO A PROCESAR:
 ${chunk}
 
-Respondé SOLO con un JSON array. Sin texto extra, sin markdown:
-[{"producto":"NOMBRE COMPLETO DEL PRODUCTO","presentacion":"PRESENTACIÓN O UNIDAD","precio":NUMERO},...]
-- precio como número decimal (17007.31 no "17.007,31")
-- Omitir encabezados de categoría (ej: "QUESOS", "LACTEOS", "CARNES")
-- Omitir líneas sin precio reconocible
-- Incluir siempre la marca en el nombre del producto`
+Respondé SOLO con JSON array válido, sin markdown ni texto extra:
+[{"producto":"NOMBRE CON MARCA","presentacion":"PRESENTACIÓN EXACTA","precio":NUMERO,"ambiguo":false},...]`
       }], 4000)
 
       const match = text.match(/\[[\s\S]*\]/)
@@ -393,11 +412,33 @@ export default function ImportarLista() {
     try {
       const text = await callAI([{
         role: 'user',
-        content: `Sos un asistente de gestión gastronómica. Analizá este encabezado y primeras filas de un Excel de lista de precios de proveedor.
-Columnas disponibles (índice: nombre): ${headers.map((h, i) => `${i}:"${h}"`).join(', ')}
-Muestra:\n${sampleText}
-Respondé SOLO con JSON válido, sin texto extra:
-{"producto_original":<índice o null>,"presentacion_original":<índice o null>,"precio_informado":<índice o null>,"cantidad_por_unidad":<índice o null>,"unidad_medida":<índice o null>,"tipo_compra":<índice o null>,"unidades_por_caja":<índice o null>,"observaciones":<índice o null>}`
+        content: `Sos un experto en listas de precios de proveedores gastronómicos argentinos.
+Analizá el encabezado y las primeras filas de este Excel para identificar qué columna corresponde a cada campo.
+
+CAMPOS A MAPEAR:
+- producto_original: nombre del producto/descripción (ej: columnas "Descripción", "Producto", "Detalle", "Artículo", "Item")
+- presentacion_original: formato/presentación del producto (ej: "Presentación", "Formato", "Envase", "Descripción 2")
+- precio_informado: precio de venta o lista (ej: "Precio", "P. Lista", "Importe", "Valor", "P. Venta", "P/u")
+- cantidad_por_unidad: cantidad numérica por unidad (ej: "Cantidad", "Cant.", "Peso", "Kgs", "Contenido", "Vol.")
+- unidad_medida: unidad de medida (ej: "Unidad", "UM", "U.M.", "Medida")
+- tipo_compra: si dice CAJA/UNIDAD (ej: "Tipo", "Modalidad de venta")
+- unidades_por_caja: cuántas unidades tiene una caja (ej: "Und/Caja", "Uds x Caja", "Bulto")
+- observaciones: notas adicionales (ej: "Obs", "Nota", "Comentario")
+
+COLUMNAS DISPONIBLES (índice: nombre de encabezado):
+${headers.map((h, i) => `${i}: "${h}"`).join('\n')}
+
+MUESTRA DE LAS PRIMERAS FILAS:
+${sampleText}
+
+INSTRUCCIONES:
+- Usá el índice de columna (número entero), no el nombre
+- Si una columna no existe claramente → null
+- Si precio aparece SIN columna separada de presentación, puede estar mezclado en la descripción → precio_informado:null
+- Priorizá la columna de precio NETO o de lista (no precio con IVA si hay varias)
+
+Respondé SOLO con JSON válido, sin texto extra ni markdown:
+{"producto_original":0,"presentacion_original":null,"precio_informado":2,"cantidad_por_unidad":null,"unidad_medida":null,"tipo_compra":null,"unidades_por_caja":null,"observaciones":null}`
       }])
       const parsed = JSON.parse(text.match(/\{[\s\S]*\}/)?.[0] || '{}')
       const newMap = {}
@@ -478,16 +519,32 @@ Respondé SOLO con JSON válido, sin texto extra:
     if (!pendientes.length) { setAiMessage('Todos los productos ya están identificados.'); return }
     setAiProcessing(true); setAiMessage('Identificando productos con IA...')
     try {
-      const productosBase = productos.map(p => `${p.codigo}: ${p.producto} (alias: ${p.alias || '—'})`).join('\n')
-      const lista = pendientes.map((r, i) => `${i}: "${r.producto_original}" ${r.presentacion_original || ''}`).join('\n')
+      const productosBase = productos.map(p =>
+        `${p.codigo}: ${p.producto}${p.alias ? ` [alias: ${p.alias}]` : ''}${p.categoria ? ` (${p.categoria})` : ''}`
+      ).join('\n')
+      const lista = pendientes.map((r, i) =>
+        `${i}: "${r.producto_original}"${r.presentacion_original ? ` — ${r.presentacion_original}` : ''}`
+      ).join('\n')
       const text = await callAI([{
         role: 'user',
-        content: `Sos un asistente de gestión gastronómica. Tu tarea es identificar a qué producto base corresponde cada item.
-PRODUCTOS BASE (código: nombre):
+        content: `Sos un experto en insumos gastronómicos argentinos.
+Tu tarea: para cada item del proveedor, encontrar el código del producto interno que corresponde.
+
+PRODUCTOS INTERNOS (código: nombre [alias] (categoría)):
 ${productosBase}
-ITEMS DEL PROVEEDOR:
+
+ITEMS DEL PROVEEDOR (índice: "nombre del proveedor" — presentación):
 ${lista}
-Respondé SOLO con JSON: {"0":"COD001","1":null,...} usando el índice de cada item.`
+
+REGLAS:
+- Ignorá marca, tamaño y proveedor al comparar: "Aceite Girasol Cocinero x 900ml" → busca "Aceite Girasol" en los internos
+- Si el producto coincide aunque sea con nombre distinto (sinónimos, abreviaciones) → asignarlo
+- Ejemplos: "LOMO BOVINO" → busca "Lomo"; "HARINA 000 CAÑUELAS 25KG" → busca "Harina 000"
+- Si hay duda razonable: asignalo igual con confianza baja
+- Si definitivamente no existe: null
+
+Respondé SOLO con JSON, sin texto extra:
+{"0":"COD001","1":null,"2":"COD003",...}`
       }])
       const parsed = JSON.parse(text.match(/\{[\s\S]*\}/)?.[0] || '{}')
       setRows(prev => {
