@@ -7,6 +7,7 @@ import ImportarLista from './components/ImportarLista'
 import Equivalencias from './components/Equivalencias'
 import Comparador    from './components/Comparador'
 import Configuracion, { loadAppSettings, applyTheme } from './components/Configuracion'
+import SimuladorFactura from './components/SimuladorFactura'
 
 const SECTIONS = [
   {
@@ -34,6 +35,7 @@ const SECTIONS = [
     title: 'Análisis',
     items: [
       { id: 'comparador',    label: 'Comparador',       icon: '💰' },
+      { id: 'simulador',     label: 'Simulador de Factura', icon: '🧾' },
     ]
   }
 ]
@@ -46,6 +48,7 @@ const PAGES = {
   importar:      ImportarLista,
   equivalencias: Equivalencias,
   comparador:    Comparador,
+  simulador:     SimuladorFactura,
 }
 
 // Componente interno — tiene acceso al ImportContext
