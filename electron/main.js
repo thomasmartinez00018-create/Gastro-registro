@@ -131,10 +131,16 @@ function initDB() {
   // Migrations for existing DBs
   const cols = db.prepare("PRAGMA table_info(productos)").all().map(c => c.name)
   if (!cols.includes('codigos_maxirest')) db.exec("ALTER TABLE productos ADD COLUMN codigos_maxirest TEXT")
-  if (!cols.includes('rubro_maxirest')) db.exec("ALTER TABLE productos ADD COLUMN rubro_maxirest TEXT")
-  // Feature 3: add activo column to listas for versioning/archiving
+  if (!cols.includes('rubro_maxirest'))   db.exec("ALTER TABLE productos ADD COLUMN rubro_maxirest TEXT")
+  // Listas versioning
   const listasCols = db.prepare("PRAGMA table_info(listas)").all().map(c => c.name)
   if (!listasCols.includes('activo')) db.exec("ALTER TABLE listas ADD COLUMN activo INTEGER DEFAULT 1")
+  // Proveedores: descuentos e impuestos
+  const provCols = db.prepare("PRAGMA table_info(proveedores)").all().map(c => c.name)
+  if (!provCols.includes('descuento_pct'))     db.exec("ALTER TABLE proveedores ADD COLUMN descuento_pct REAL DEFAULT 0")
+  if (!provCols.includes('aplica_iva'))        db.exec("ALTER TABLE proveedores ADD COLUMN aplica_iva INTEGER DEFAULT 0")
+  if (!provCols.includes('aplica_percepcion')) db.exec("ALTER TABLE proveedores ADD COLUMN aplica_percepcion INTEGER DEFAULT 0")
+  if (!provCols.includes('impuesto_interno'))  db.exec("ALTER TABLE proveedores ADD COLUMN impuesto_interno REAL DEFAULT 0")
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -183,14 +189,19 @@ ipcMain.handle('proveedores:getAll', () => {
   return db.prepare('SELECT * FROM proveedores ORDER BY proveedor').all()
 })
 ipcMain.handle('proveedores:create', (_, p) => {
-  const stmt = db.prepare(`INSERT INTO proveedores (id_proveedor,proveedor,contacto,whatsapp,email,observaciones,activo)
-    VALUES (@id_proveedor,@proveedor,@contacto,@whatsapp,@email,@observaciones,@activo)`)
+  const stmt = db.prepare(`INSERT INTO proveedores
+    (id_proveedor,proveedor,contacto,whatsapp,email,observaciones,activo,descuento_pct,aplica_iva,aplica_percepcion,impuesto_interno)
+    VALUES (@id_proveedor,@proveedor,@contacto,@whatsapp,@email,@observaciones,@activo,@descuento_pct,@aplica_iva,@aplica_percepcion,@impuesto_interno)`)
   const r = stmt.run(p)
   return { id: r.lastInsertRowid, ...p }
 })
 ipcMain.handle('proveedores:update', (_, p) => {
-  db.prepare(`UPDATE proveedores SET id_proveedor=@id_proveedor,proveedor=@proveedor,contacto=@contacto,
-    whatsapp=@whatsapp,email=@email,observaciones=@observaciones,activo=@activo WHERE id=@id`).run(p)
+  db.prepare(`UPDATE proveedores SET
+    id_proveedor=@id_proveedor, proveedor=@proveedor, contacto=@contacto,
+    whatsapp=@whatsapp, email=@email, observaciones=@observaciones, activo=@activo,
+    descuento_pct=@descuento_pct, aplica_iva=@aplica_iva,
+    aplica_percepcion=@aplica_percepcion, impuesto_interno=@impuesto_interno
+    WHERE id=@id`).run(p)
   return p
 })
 ipcMain.handle('proveedores:delete', (_, id) => {

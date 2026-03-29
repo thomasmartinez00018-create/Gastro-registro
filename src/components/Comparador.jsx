@@ -39,34 +39,60 @@ function todayStr() {
 }
 
 export default function Comparador() {
-  const [data, setData] = useState([])
+  const [data, setData]         = useState([])
   const [allListas, setAllListas] = useState([])
   const [productos, setProductos] = useState([])
-  const [cats, setCats] = useState([])
+  const [proveedores, setProveedores] = useState([])
+  const [cats, setCats]         = useState([])
   const [catFilter, setCatFilter] = useState('')
-  const [search, setSearch] = useState('')
-  const [loading, setLoading] = useState(false)
+  const [search, setSearch]     = useState('')
+  const [loading, setLoading]   = useState(false)
   const [exporting, setExporting] = useState(false)
 
-  // Feature 6: date range + view toggle
-  const [desde, setDesde] = useState(defaultDesde())
-  const [hasta, setHasta] = useState(todayStr())
+  // Date range + view toggle
+  const [desde, setDesde]     = useState(defaultDesde())
+  const [hasta, setHasta]     = useState(todayStr())
   const [viewMode, setViewMode] = useState('ultima') // 'ultima' | 'evolucion'
+  const [expandedEvo, setExpandedEvo] = useState({})
 
-  // Feature 6: expandable evolution rows
-  const [expandedEvo, setExpandedEvo] = useState({}) // { [cod]: bool }
+  // Toggle: mostrar precios con impuestos/descuento del proveedor
+  const [conImpuestos, setConImpuestos] = useState(false)
+
+  // Map proveedorId → datos fiscales para cálculo rápido
+  const provMap = {}
+  proveedores.forEach(p => { provMap[p.id_proveedor] = p })
+
+  /** Calcula el multiplicador precio-final para un proveedor dado su config fiscal */
+  function multProv(idProv) {
+    const p = provMap[idProv]
+    if (!p) return 1
+    const desc = 1 - (p.descuento_pct || 0) / 100
+    const iva  = 1 + (p.aplica_iva ? 0.21 : 0)
+    const perc = 1 + (p.aplica_percepcion ? 0.03 : 0)
+    const int_ = 1 + (p.impuesto_interno || 0) / 100
+    return desc * iva * perc * int_
+  }
+
+  /** Precio por medida aplicando impuestos/descuento si el toggle está activo */
+  function adjustedPxm(row) {
+    const base = effectivePxm(row)
+    if (base == null) return null
+    return conImpuestos ? base * multProv(row.id_proveedor) : base
+  }
 
   const load = async () => {
     setLoading(true)
     try {
-      const [rows, prods, listas] = await Promise.all([
+      const [rows, prods, listas, provs] = await Promise.all([
         api.comparador.getComparativa({}),
         api.productos.getAll(),
         api.listas.getAll(),
+        api.proveedores.getAll(),
       ])
       setData(rows)
       setAllListas(listas)
       setProductos(prods)
+      setProveedores(provs)
       setCats([...new Set(prods.map(p => p.categoria).filter(Boolean))].sort())
     } finally { setLoading(false) }
   }
@@ -137,7 +163,7 @@ export default function Comparador() {
   const totalProductos = entries.length
   const conAhorro = entries.filter(([, g]) => {
     const rowsToCheck = viewMode === 'ultima' ? getUltimaRows(g.rows) : g.rows
-    const precios = rowsToCheck.map(r => effectivePxm(r)).filter(p => p != null && p > 0)
+    const precios = rowsToCheck.map(r => adjustedPxm(r)).filter(p => p != null && p > 0)
     return precios.length > 1 && Math.max(...precios) > Math.min(...precios)
   }).length
 
@@ -210,7 +236,7 @@ export default function Comparador() {
               />
             </div>
 
-            {/* Feature 6: view mode toggle */}
+            {/* View mode toggle */}
             <div style={{ display: 'flex', gap: '4px' }}>
               <button
                 className={`btn btn-sm ${viewMode === 'ultima' ? 'btn-primary' : 'btn-secondary'}`}
@@ -222,9 +248,20 @@ export default function Comparador() {
                 className={`btn btn-sm ${viewMode === 'evolucion' ? 'btn-primary' : 'btn-secondary'}`}
                 onClick={() => setViewMode('evolucion')}
               >
-                📈 Evolución histórica
+                📈 Evolución
               </button>
             </div>
+
+            {/* Toggle impuestos/descuentos */}
+            <button
+              className={`btn btn-sm ${conImpuestos ? 'btn-accent' : 'btn-secondary'}`}
+              onClick={() => setConImpuestos(v => !v)}
+              title={conImpuestos
+                ? 'Mostrando precios con impuestos y descuentos del proveedor. Clic para ver precio de lista.'
+                : 'Mostrando precio de lista. Clic para ver precio final con impuestos y descuentos.'}
+            >
+              {conImpuestos ? '💰 Con impuestos' : '💰 Ver c/impuestos'}
+            </button>
           </div>
         </div>
 
@@ -241,8 +278,8 @@ export default function Comparador() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             {entries.map(([cod, g]) => {
               const displayRows = viewMode === 'ultima' ? getUltimaRows(g.rows) : g.rows
-              const rowsSorted = [...displayRows].sort((a, b) => (effectivePxm(a) ?? Infinity) - (effectivePxm(b) ?? Infinity))
-              const precios = rowsSorted.map(r => effectivePxm(r)).filter(p => p != null && p > 0)
+              const rowsSorted = [...displayRows].sort((a, b) => (adjustedPxm(a) ?? Infinity) - (adjustedPxm(b) ?? Infinity))
+              const precios = rowsSorted.map(r => adjustedPxm(r)).filter(p => p != null && p > 0)
               const minP = precios.length ? Math.min(...precios) : null
               const maxP = precios.length ? Math.max(...precios) : null
               const ahorro = minP && maxP && maxP > minP ? ((maxP - minP) / maxP * 100).toFixed(0) : 0
@@ -306,20 +343,38 @@ export default function Comparador() {
                       </thead>
                       <tbody>
                         {rowsSorted.map((r, i) => {
-                          const pxm = effectivePxm(r)
-                          const isBest = pxm === minP && minP != null
+                          const pxm    = adjustedPxm(r)
+                          const isBest  = pxm === minP && minP != null
                           const isWorst = pxm === maxP && maxP != null && maxP !== minP
+                          const mult    = conImpuestos ? multProv(r.id_proveedor) : 1
+                          const provData = provMap[r.id_proveedor]
                           return (
                             <tr key={i} style={isBest ? { background: '#f0fdf4' } : {}}>
                               <td style={{ fontWeight: 600 }}>
                                 {isBest && <span style={{ marginRight: '4px' }}>⭐</span>}
-                                {r.proveedor || r.id_proveedor}
+                                <span>{r.proveedor || r.id_proveedor}</span>
+                                {/* Badges fiscales del proveedor */}
+                                {conImpuestos && provData && (
+                                  <div style={{ display: 'flex', gap: '3px', marginTop: '2px', flexWrap: 'wrap' }}>
+                                    {provData.descuento_pct > 0 && <span className="badge badge-green" style={{ fontSize: '10px' }}>-{provData.descuento_pct}%</span>}
+                                    {provData.aplica_iva        && <span className="badge badge-blue"  style={{ fontSize: '10px' }}>IVA 21%</span>}
+                                    {provData.aplica_percepcion && <span className="badge badge-blue"  style={{ fontSize: '10px' }}>Perc. 3%</span>}
+                                    {provData.impuesto_interno > 0 && <span className="badge badge-yellow" style={{ fontSize: '10px' }}>Int. {provData.impuesto_interno}%</span>}
+                                  </div>
+                                )}
                               </td>
-                              <td className="text-muted" style={{ maxWidth: '180px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.producto_original}</td>
+                              <td className="text-muted" style={{ maxWidth: '160px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.producto_original}</td>
                               <td className="text-muted">{r.presentacion_original || '—'}</td>
                               <td><span className={`badge ${r.tipo_compra === 'CAJA' ? 'badge-blue' : 'badge-gray'}`}>{r.tipo_compra}</span></td>
-                              <td>{fmt(r.precio_informado)}</td>
-                              <td>{fmt(r.precio_por_unidad)}</td>
+                              <td>
+                                {fmt(r.precio_informado)}
+                                {conImpuestos && mult !== 1 && (
+                                  <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+                                    x{mult.toFixed(3)} → {fmt(r.precio_informado * mult)}
+                                  </div>
+                                )}
+                              </td>
+                              <td>{fmt(conImpuestos ? (r.precio_por_unidad ?? 0) * mult : r.precio_por_unidad)}</td>
                               <td>
                                 <span className={isBest ? 'best-price' : isWorst ? 'worst-price' : ''}>
                                   {fmt(pxm)}
