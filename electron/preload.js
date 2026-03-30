@@ -44,6 +44,13 @@ contextBridge.exposeInMainWorld('api', {
   file: {
     readExcel: (path) => ipcRenderer.invoke('file:readExcel', path),
   },
+  // Licencia
+  license: {
+    check:      ()              => ipcRenderer.invoke('license:check'),
+    activate:   (data)          => ipcRenderer.invoke('license:activate', data),
+    deactivate: ()              => ipcRenderer.invoke('license:deactivate'),
+    generate:   (clienteId)     => ipcRenderer.invoke('license:generate', clienteId),
+  },
   // Maxirest
   maxirest: {
     parseInsumos: (path) => ipcRenderer.invoke('maxirest:parseInsumos', path),

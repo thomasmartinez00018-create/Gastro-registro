@@ -1,13 +1,17 @@
 import { useState, useEffect } from 'react'
 import { ImportProvider, useImport } from './ImportContext'
-import Dashboard     from './components/Dashboard'
-import Productos     from './components/Productos'
-import Proveedores   from './components/Proveedores'
-import ImportarLista from './components/ImportarLista'
-import Equivalencias from './components/Equivalencias'
-import Comparador    from './components/Comparador'
+import Dashboard        from './components/Dashboard'
+import Productos        from './components/Productos'
+import Proveedores      from './components/Proveedores'
+import ImportarLista    from './components/ImportarLista'
+import Equivalencias    from './components/Equivalencias'
+import Comparador       from './components/Comparador'
 import Configuracion, { loadAppSettings, applyTheme } from './components/Configuracion'
 import SimuladorFactura from './components/SimuladorFactura'
+import ActivacionScreen from './components/ActivacionScreen'
+import GeneradorLicencias from './components/GeneradorLicencias'
+
+const IS_DEV = import.meta.env.DEV
 
 const SECTIONS = [
   {
@@ -34,10 +38,15 @@ const SECTIONS = [
   {
     title: 'Análisis',
     items: [
-      { id: 'comparador',    label: 'Comparador',       icon: '💰' },
+      { id: 'comparador',    label: 'Comparador',           icon: '💰' },
       { id: 'simulador',     label: 'Simulador de Factura', icon: '🧾' },
     ]
-  }
+  },
+  // Solo visible en modo desarrollo
+  ...( IS_DEV ? [{
+    title: 'Desarrollador',
+    items: [{ id: 'licencias', label: 'Generar Licencias', icon: '🔑' }],
+  }] : []),
 ]
 
 const PAGES = {
@@ -49,6 +58,7 @@ const PAGES = {
   equivalencias: Equivalencias,
   comparador:    Comparador,
   simulador:     SimuladorFactura,
+  licencias:     GeneradorLicencias,
 }
 
 // Componente interno — tiene acceso al ImportContext
@@ -56,6 +66,18 @@ function AppInner() {
   const [page, setPage] = useState('dashboard')
   const { job } = useImport()
   const Page = PAGES[page] || Dashboard
+
+  // Licencia
+  const [licensed,     setLicensed]     = useState(null)  // null = cargando, true/false
+  const [licCliente,   setLicCliente]   = useState('')
+
+  useEffect(() => {
+    if (!window.api?.license) { setLicensed(true); return }  // dev sin IPC
+    window.api.license.check().then(res => {
+      setLicensed(res.activated)
+      setLicCliente(res.cliente || '')
+    }).catch(() => setLicensed(true))  // si falla, no bloquear
+  }, [])
 
   // Personalización
   const [appSettings, setAppSettings] = useState({ restaurantName: '', logoBase64: '', theme: 'gastronomica' })
@@ -82,6 +104,18 @@ function AppInner() {
   useEffect(() => { window._navigateTo = setPage }, [setPage])
 
   const { restaurantName, logoBase64 } = appSettings
+
+  // Pantalla de carga mientras verifica licencia
+  if (licensed === null) return (
+    <div style={{ position: 'fixed', inset: 0, background: '#0f172a', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ color: '#64748b', fontSize: '14px', fontFamily: 'Inter, sans-serif' }}>⏳ Verificando licencia…</div>
+    </div>
+  )
+
+  // Sin licencia → pantalla de activación
+  if (!licensed && !IS_DEV) return (
+    <ActivacionScreen onActivated={() => setLicensed(true)} />
+  )
 
   return (
     <div className="app-layout">
@@ -147,7 +181,7 @@ function AppInner() {
         <div className="sidebar-footer">
           <span className="sidebar-footer-badge">v1.2</span>
           <span className="sidebar-footer-text">
-            {job.aiProcessing ? '⏳ Procesando…' : 'Gastronomía'}
+            {job.aiProcessing ? '⏳ Procesando…' : licCliente || 'Gastronomía'}
           </span>
         </div>
       </aside>

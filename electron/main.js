@@ -128,6 +128,16 @@ function initDB() {
     );
   `)
 
+  // Tabla de activación / licencia
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS activation (
+      id          INTEGER PRIMARY KEY,
+      cliente_id  TEXT NOT NULL,
+      activated_at TEXT DEFAULT (datetime('now')),
+      active      INTEGER DEFAULT 1
+    );
+  `)
+
   // Migrations for existing DBs
   const cols = db.prepare("PRAGMA table_info(productos)").all().map(c => c.name)
   if (!cols.includes('codigos_maxirest')) db.exec("ALTER TABLE productos ADD COLUMN codigos_maxirest TEXT")
@@ -142,6 +152,50 @@ function initDB() {
   if (!provCols.includes('aplica_percepcion')) db.exec("ALTER TABLE proveedores ADD COLUMN aplica_percepcion INTEGER DEFAULT 0")
   if (!provCols.includes('impuesto_interno'))  db.exec("ALTER TABLE proveedores ADD COLUMN impuesto_interno REAL DEFAULT 0")
 }
+
+// ─── Licencias ────────────────────────────────────────────────────────────────
+const crypto = require('crypto')
+// Clave secreta del desarrollador — NO compartir con clientes
+const LIC_SECRET = 'g4str0_prv_#8xKmP!2024'
+
+function buildKey(clienteId) {
+  return crypto
+    .createHmac('sha256', LIC_SECRET)
+    .update(clienteId.toLowerCase().trim().replace(/\s+/g, ''))
+    .digest('hex')
+    .slice(0, 16)
+    .toUpperCase()
+    .match(/.{4}/g)
+    .join('-')
+}
+
+// Consultar si la app está activada
+ipcMain.handle('license:check', () => {
+  const row = db.prepare('SELECT * FROM activation WHERE active = 1').get()
+  return { activated: !!row, cliente: row?.cliente_id || null }
+})
+
+// Activar con clave
+ipcMain.handle('license:activate', (_, { key, clienteId }) => {
+  const expected = buildKey(clienteId)
+  const input    = (key || '').toUpperCase().replace(/[\s-]/g, '').match(/.{4}/g)?.join('-') || ''
+  if (input !== expected) return { ok: false, error: 'Clave de licencia inválida. Verificá el nombre exacto del cliente.' }
+  db.prepare(`INSERT OR REPLACE INTO activation (id, cliente_id, activated_at, active) VALUES (1, ?, datetime('now'), 1)`)
+    .run(clienteId.trim())
+  return { ok: true }
+})
+
+// Desactivar (para el desarrollador — reset de licencia)
+ipcMain.handle('license:deactivate', () => {
+  db.prepare('UPDATE activation SET active = 0').run()
+  return true
+})
+
+// Generar clave (SOLO en modo desarrollo — el desarrollador usa esto)
+ipcMain.handle('license:generate', (_, clienteId) => {
+  if (!isDev) return null
+  return buildKey(clienteId)
+})
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const UNIT_MAP = {
