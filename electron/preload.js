@@ -32,8 +32,9 @@ contextBridge.exposeInMainWorld('api', {
   },
   // Comparador
   comparador: {
-    getComparativa: (filtros) => ipcRenderer.invoke('comparador:getComparativa', filtros),
-    exportarSeleccion: (data) => ipcRenderer.invoke('comparador:exportarSeleccion', data),
+    getComparativa:   (filtros) => ipcRenderer.invoke('comparador:getComparativa', filtros),
+    exportarSeleccion:(data)    => ipcRenderer.invoke('comparador:exportarSeleccion', data),
+    exportarLista:    (data)    => ipcRenderer.invoke('comparador:exportarLista', data),
   },
   // Archivos
   dialog: {

@@ -417,6 +417,48 @@ ipcMain.handle('maxirest:exportarComparativa', async (_, { rows, outputPath }) =
   return savePath
 })
 
+// Export lista de compra: hoja Lista + hoja Por proveedor
+ipcMain.handle('comparador:exportarLista', async (_, { items, outputPath }) => {
+  const XLSX  = require('xlsx')
+  const wb    = XLSX.utils.book_new()
+  const num   = v => v != null ? Number(Number(v).toFixed(2)) : ''
+
+  // ── Hoja 1: Lista completa ──────────────────────────────────────────────────
+  const listaData = [['Producto','Código','Categoría','Cantidad','Unidad','Mejor proveedor','Precio/unidad','Subtotal']]
+  for (const it of items) {
+    listaData.push([it.producto, it.codigo, it.categoria || '', it.cantidad, it.unidad_base,
+      it.bestProveedor || 'Sin datos', num(it.bestPxm), num(it.subtotal)])
+  }
+  const total = items.reduce((s, i) => s + (i.subtotal || 0), 0)
+  listaData.push(['TOTAL ESTIMADO','','','','','','', num(total)])
+
+  const wsL = XLSX.utils.aoa_to_sheet(listaData)
+  wsL['!cols'] = [30,10,14,10,8,26,14,14].map(w => ({wch: w}))
+  XLSX.utils.book_append_sheet(wb, wsL, 'Lista de compra')
+
+  // ── Hoja 2: Agrupado por proveedor ─────────────────────────────────────────
+  const byProv = {}
+  items.forEach(it => {
+    if (!it.bestProveedor) return
+    if (!byProv[it.bestProveedor]) byProv[it.bestProveedor] = []
+    byProv[it.bestProveedor].push(it)
+  })
+  const provData = [['Proveedor','Producto','Código','Cantidad','Unidad','Precio/unidad','Subtotal']]
+  for (const [prov, provItems] of Object.entries(byProv)) {
+    for (const it of provItems)
+      provData.push([prov, it.producto, it.codigo, it.cantidad, it.unidad_base, num(it.bestPxm), num(it.subtotal)])
+    const subtotProv = provItems.reduce((s, i) => s + (i.subtotal || 0), 0)
+    provData.push(['', `SUBTOTAL ${prov}`, '', '', '', '', num(subtotProv)])
+    provData.push(Array(7).fill(''))
+  }
+  const wsP = XLSX.utils.aoa_to_sheet(provData)
+  wsP['!cols'] = [24,28,10,10,8,14,14].map(w => ({wch: w}))
+  XLSX.utils.book_append_sheet(wb, wsP, 'Por proveedor')
+
+  XLSX.writeFile(wb, outputPath)
+  return outputPath
+})
+
 // Export comparativa selección: 2 hojas (Resumen + Detalle)
 ipcMain.handle('comparador:exportarSeleccion', async (_, { grupos, outputPath, conImpuestos }) => {
   const XLSX = require('xlsx')
