@@ -2,20 +2,36 @@ import { useState, useEffect } from 'react'
 import api from '../api'
 
 const ACCIONES = [
-  { icon: '📋', title: 'Importar lista',         desc: 'Subir un Excel o PDF de proveedor', page: 'importar',      color: '#2d5a3d' },
-  { icon: '💰', title: 'Comparar precios',        desc: 'Ver quién vende más barato',        page: 'comparador',    color: '#c9943a' },
-  { icon: '⚖️', title: 'Resolver equivalencias', desc: 'Vincular productos sin código',     page: 'equivalencias', color: '#1a6b9a' },
-  { icon: '🧺', title: 'Gestionar productos',     desc: 'Alta y edición de insumos',         page: 'productos',     color: '#6b4d2a' },
-  { icon: '🚚', title: 'Gestionar proveedores',   desc: 'Alta y edición de proveedores',     page: 'proveedores',   color: '#5a3d6b' },
+  { icon: 'upload_file',    title: 'Importar lista',         desc: 'Subir un Excel o PDF de proveedor', page: 'importar'      },
+  { icon: 'bar_chart',      title: 'Comparar precios',        desc: 'Ver quién vende más barato',        page: 'comparador'    },
+  { icon: 'compare_arrows', title: 'Resolver equivalencias', desc: 'Vincular productos sin código',     page: 'equivalencias' },
+  { icon: 'inventory_2',    title: 'Gestionar productos',     desc: 'Alta y edición de insumos',         page: 'productos'     },
+  { icon: 'factory',        title: 'Gestionar proveedores',   desc: 'Alta y edición de proveedores',     page: 'proveedores'   },
+  { icon: 'receipt_long',   title: 'Simular pedido',          desc: 'Generar una orden de compra',       page: 'simulador'     },
 ]
 
 const PASOS = [
-  { n: '1', t: 'Cargá tus productos',      d: 'En Productos, registrá los insumos con código alfanumérico y unidad base.' },
-  { n: '2', t: 'Registrá tus proveedores', d: 'En Proveedores, cargá cada proveedor con su ID y datos de contacto.' },
-  { n: '3', t: 'Importá una lista',        d: 'En Importar Lista, subí el Excel o PDF del proveedor. La IA detecta los datos.' },
-  { n: '4', t: 'Resolvé pendientes',       d: 'En Equivalencias usá "Automáticas con IA" para vincular de un clic.' },
-  { n: '5', t: 'Comparar precios',         d: 'En Comparador, filtrá por producto y compará el precio real por unidad.' },
+  { n: '1', icon: 'inventory_2',    t: 'Cargá tus productos',      d: 'Registrá los insumos con código alfanumérico y unidad base.' },
+  { n: '2', icon: 'factory',        t: 'Registrá tus proveedores', d: 'Cargá cada proveedor con su ID y datos de contacto.' },
+  { n: '3', icon: 'upload_file',    t: 'Importá una lista',        d: 'Subí el Excel o PDF del proveedor. La IA detecta los datos.' },
+  { n: '4', icon: 'compare_arrows', t: 'Resolvé pendientes',       d: 'Usá "Automáticas con IA" para vincular productos de un clic.' },
+  { n: '5', icon: 'bar_chart',      t: 'Comparar precios',         d: 'Filtrá por producto y compará el precio real por unidad.' },
 ]
+
+function StatCard({ icon, label, value, accent, warn }) {
+  const color = warn ? 'var(--danger)' : accent ? 'var(--primary)' : 'var(--text)'
+  return (
+    <div className="stat-card">
+      <div className="stat-icon">
+        <span className="material-symbols-outlined" style={{ color: accent || warn ? (warn ? 'var(--danger)' : 'var(--primary)') : 'var(--text-muted)' }}>
+          {icon}
+        </span>
+      </div>
+      <div className="stat-number" style={{ color }}>{value}</div>
+      <div className="stat-label">{label}</div>
+    </div>
+  )
+}
 
 export default function Dashboard({ onNavigate }) {
   const [stats, setStats] = useState({ productos: 0, proveedores: 0, listas: 0, pendientes: 0 })
@@ -40,115 +56,205 @@ export default function Dashboard({ onNavigate }) {
       {/* Header */}
       <div className="page-header">
         <div>
-          <h2>Bienvenido</h2>
-          <p>Panel general del sistema de gestión de proveedores</p>
+          <h2>Supplier Intelligence</h2>
+          <p>Insights en tiempo real · análisis de proveedores y precios</p>
+        </div>
+        <div style={{ display: 'flex', gap: '10px' }}>
+          <button className="btn btn-secondary" onClick={() => onNavigate('comparador')}>
+            <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>bar_chart</span>
+            Comparador
+          </button>
+          <button className="btn btn-accent" onClick={() => onNavigate('importar')}>
+            <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>add</span>
+            Nueva Importación
+          </button>
         </div>
       </div>
 
       <div className="page-body">
 
-        {/* ── Stats ──────────────────────────────────────────────────────── */}
-        <div className="stats-grid">
-          {[
-            { icon: '🧺', label: 'Productos activos',    val: stats.productos,   color: 'var(--primary)' },
-            { icon: '🚚', label: 'Proveedores activos',  val: stats.proveedores, color: 'var(--primary)' },
-            { icon: '📋', label: 'Registros en listas',  val: stats.listas,      color: 'var(--primary)' },
-            { icon: '⚖️', label: 'Sin código asignado',  val: stats.pendientes,  color: stats.pendientes > 0 ? 'var(--warning)' : 'var(--primary)' },
-          ].map(s => (
-            <div className="stat-card" key={s.label}>
-              <span className="stat-icon">{s.icon}</span>
-              <div className="stat-number" style={{ color: s.color }}>{s.val}</div>
-              <div className="stat-label">{s.label}</div>
-            </div>
-          ))}
+        {/* ── Stats Row ──────────────────────────────────────────────────── */}
+        <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(4, 1fr)', marginBottom: '24px' }}>
+          <StatCard icon="inventory_2"    label="Productos activos"   value={stats.productos}   />
+          <StatCard icon="factory"        label="Proveedores activos" value={stats.proveedores} accent />
+          <StatCard icon="table_chart"    label="Registros en listas" value={stats.listas}      />
+          <StatCard icon="pending_actions" label="Sin código asignado" value={stats.pendientes} warn={stats.pendientes > 0} />
         </div>
 
-        {/* Alerta pendientes */}
-        {stats.pendientes > 0 && (
-          <div className="alert alert-warning mb-3" style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:'12px' }}>
-            <span>⚠️ Hay <strong>{stats.pendientes}</strong> productos sin código. Usá <strong>Equivalencias → Automáticas con IA</strong> para resolverlos en segundos.</span>
-            <button className="btn btn-sm btn-accent" onClick={() => onNavigate('equivalencias')} style={{ flexShrink:0 }}>
-              Ir ahora →
-            </button>
-          </div>
-        )}
+        {/* ── Bento Grid ─────────────────────────────────────────────────── */}
+        <div className="bento-grid">
 
-        {/* ── Acciones rápidas ───────────────────────────────────────────── */}
-        <div className="card mb-3">
-          <div className="card-header">
-            <h3>Acciones rápidas</h3>
-          </div>
-          <div className="card-body">
-            <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(170px, 1fr))', gap:'12px' }}>
+          {/* Acciones rápidas */}
+          <div className="bento-card bento-span-7">
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px' }}>
+              <span className="material-symbols-outlined" style={{ color: 'var(--primary)', fontSize: '22px' }}>bolt</span>
+              <div>
+                <h3 style={{ fontFamily: 'Manrope, sans-serif', fontSize: '16px', fontWeight: 700 }}>Acciones Rápidas</h3>
+                <p style={{ fontSize: '11.5px', color: 'var(--text-muted)', marginTop: '2px' }}>Accedé directo a las secciones principales</p>
+              </div>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
               {ACCIONES.map(a => (
-                <button key={a.page} onClick={() => onNavigate(a.page)}
+                <button
+                  key={a.page}
+                  onClick={() => onNavigate(a.page)}
                   style={{
                     background: 'var(--surface-2)',
                     border: '1px solid var(--border)',
                     borderRadius: '10px',
-                    padding: '16px 14px',
+                    padding: '14px 12px',
                     cursor: 'pointer',
                     textAlign: 'left',
                     transition: 'all .18s',
-                    position: 'relative',
-                    overflow: 'hidden',
+                    fontFamily: 'inherit',
                   }}
                   onMouseEnter={e => {
-                    e.currentTarget.style.background = '#fff'
-                    e.currentTarget.style.borderColor = a.color
-                    e.currentTarget.style.boxShadow = `0 4px 12px ${a.color}22`
-                    e.currentTarget.style.transform = 'translateY(-1px)'
+                    e.currentTarget.style.background = 'var(--surface-3)'
+                    e.currentTarget.style.borderColor = 'rgba(252,197,112,0.3)'
+                    e.currentTarget.style.transform = 'translateY(-2px)'
+                    e.currentTarget.style.boxShadow = '0 6px 16px rgba(0,0,0,0.3)'
                   }}
                   onMouseLeave={e => {
                     e.currentTarget.style.background = 'var(--surface-2)'
                     e.currentTarget.style.borderColor = 'var(--border)'
-                    e.currentTarget.style.boxShadow = 'none'
                     e.currentTarget.style.transform = 'translateY(0)'
-                  }}>
+                    e.currentTarget.style.boxShadow = 'none'
+                  }}
+                >
                   <div style={{
-                    width: '38px', height: '38px', borderRadius: '9px',
-                    background: `${a.color}18`,
+                    width: '34px', height: '34px', borderRadius: '8px',
+                    background: 'var(--accent-light)',
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: '20px', marginBottom: '10px',
+                    marginBottom: '10px',
                   }}>
-                    {a.icon}
+                    <span className="material-symbols-outlined" style={{ color: 'var(--accent)', fontSize: '18px' }}>{a.icon}</span>
                   </div>
-                  <div style={{ fontWeight: 700, fontSize: '13px', color: 'var(--text)', marginBottom: '4px' }}>{a.title}</div>
-                  <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', lineHeight: 1.4 }}>{a.desc}</div>
+                  <div style={{ fontWeight: 600, fontSize: '12.5px', color: 'var(--text)', marginBottom: '3px' }}>{a.title}</div>
+                  <div style={{ fontSize: '11px', color: 'var(--text-muted)', lineHeight: 1.4 }}>{a.desc}</div>
                 </button>
               ))}
             </div>
           </div>
-        </div>
 
-        {/* ── Guía de uso ────────────────────────────────────────────────── */}
-        <div className="card">
-          <div className="card-header">
-            <h3>¿Cómo usar el sistema?</h3>
-          </div>
-          <div className="card-body">
-            <div style={{ display:'flex', flexDirection:'column', gap:'14px' }}>
-              {PASOS.map((s, i) => (
-                <div key={s.n} style={{ display:'flex', gap:'14px', alignItems:'flex-start' }}>
-                  <div style={{
-                    background: i === 0 ? 'var(--accent)' : 'var(--primary)',
-                    color: '#fff',
-                    borderRadius: '50%',
-                    width: '26px', height: '26px',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: '12px', fontWeight: 800, flexShrink: 0,
-                    boxShadow: i === 0 ? '0 2px 6px rgba(201,148,58,.4)' : '0 2px 6px rgba(45,90,61,.25)',
-                  }}>{s.n}</div>
-                  <div style={{ paddingTop: '2px' }}>
-                    <div style={{ fontWeight: 600, fontSize: '13px', color: 'var(--text)' }}>{s.t}</div>
-                    <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '3px', lineHeight: 1.5 }}>{s.d}</div>
+          {/* Estado del sistema */}
+          <div className="bento-card bento-span-5">
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px' }}>
+              <span className="material-symbols-outlined" style={{ color: 'var(--primary)', fontSize: '22px' }}>monitoring</span>
+              <div>
+                <h3 style={{ fontFamily: 'Manrope, sans-serif', fontSize: '16px', fontWeight: 700 }}>Estado del Sistema</h3>
+                <p style={{ fontSize: '11.5px', color: 'var(--text-muted)', marginTop: '2px' }}>Métricas y alertas activas</p>
+              </div>
+            </div>
+
+            {/* Métricas */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '20px' }}>
+              {[
+                { label: 'Cobertura de productos',    val: stats.listas > 0 ? Math.min(100, Math.round(((stats.listas - stats.pendientes) / Math.max(stats.listas,1)) * 100)) : 0, color: 'var(--primary)' },
+                { label: 'Proveedores configurados',  val: Math.min(100, stats.proveedores * 20), color: '#adcbda' },
+              ].map(m => (
+                <div key={m.label}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11.5px', marginBottom: '6px' }}>
+                    <span style={{ color: 'var(--text-muted)' }}>{m.label}</span>
+                    <span style={{ color: m.color, fontWeight: 600 }}>{m.val}%</span>
                   </div>
-                  {i < PASOS.length - 1 && (
-                    <div style={{ position:'relative' }} />
-                  )}
+                  <div style={{ height: '5px', background: 'var(--surface-3)', borderRadius: '99px', overflow: 'hidden' }}>
+                    <div style={{ width: `${m.val}%`, height: '100%', background: m.color, borderRadius: '99px', transition: 'width .6s ease' }} />
+                  </div>
                 </div>
               ))}
             </div>
+
+            {/* Alerta pendientes */}
+            {stats.pendientes > 0 ? (
+              <div style={{
+                background: 'rgba(252,197,112,0.08)',
+                border: '1px solid rgba(252,197,112,0.2)',
+                borderRadius: '10px',
+                padding: '14px',
+              }}>
+                <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', marginBottom: '10px' }}>
+                  <span className="material-symbols-outlined" style={{ color: 'var(--warning)', fontSize: '18px', flexShrink: 0, marginTop: '1px' }}>warning</span>
+                  <div style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: 1.5 }}>
+                    <strong style={{ color: 'var(--text)', display: 'block', marginBottom: '2px' }}>{stats.pendientes} productos sin código</strong>
+                    Usá Equivalencias con IA para resolverlos en segundos.
+                  </div>
+                </div>
+                <button className="btn btn-accent btn-sm" style={{ width: '100%' }} onClick={() => onNavigate('equivalencias')}>
+                  <span className="material-symbols-outlined" style={{ fontSize: '15px' }}>auto_awesome</span>
+                  Resolver ahora
+                </button>
+              </div>
+            ) : (
+              <div style={{
+                background: 'rgba(110,231,183,0.08)',
+                border: '1px solid rgba(110,231,183,0.15)',
+                borderRadius: '10px',
+                padding: '14px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+              }}>
+                <span className="material-symbols-outlined" style={{ color: 'var(--success)', fontSize: '20px' }}>check_circle</span>
+                <div style={{ fontSize: '12px' }}>
+                  <div style={{ color: 'var(--success)', fontWeight: 600 }}>Sistema al día</div>
+                  <div style={{ color: 'var(--text-muted)', marginTop: '2px' }}>No hay pendientes por resolver</div>
+                </div>
+              </div>
+            )}
+          </div>
+
+        </div>
+
+        {/* ── Guía de uso ────────────────────────────────────────────────── */}
+        <div className="bento-card bento-span-12" style={{ borderRadius: 'var(--radius-lg)', marginBottom: '0' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '24px' }}>
+            <span className="material-symbols-outlined" style={{ color: 'var(--primary)', fontSize: '22px' }}>route</span>
+            <div>
+              <h3 style={{ fontFamily: 'Manrope, sans-serif', fontSize: '16px', fontWeight: 700 }}>Flujo de Trabajo</h3>
+              <p style={{ fontSize: '11.5px', color: 'var(--text-muted)', marginTop: '2px' }}>Seguí estos pasos para sacar el máximo provecho del sistema</p>
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '0' }}>
+            {PASOS.map((s, i) => (
+              <div key={s.n} style={{ display: 'flex', position: 'relative' }}>
+                {/* Conector */}
+                {i < PASOS.length - 1 && (
+                  <div style={{
+                    position: 'absolute',
+                    top: '16px',
+                    left: 'calc(50% + 16px)',
+                    right: '0',
+                    height: '1px',
+                    background: 'var(--border)',
+                    zIndex: 0,
+                  }} />
+                )}
+                <div style={{ padding: '0 16px 0 0', flex: 1, position: 'relative', zIndex: 1 }}>
+                  {/* Número + icono */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
+                    <div style={{
+                      width: '32px', height: '32px',
+                      borderRadius: '50%',
+                      background: i === 0 ? 'var(--accent)' : 'var(--surface-2)',
+                      border: `1px solid ${i === 0 ? 'transparent' : 'var(--border)'}`,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      flexShrink: 0,
+                    }}>
+                      <span style={{
+                        fontFamily: 'Manrope, sans-serif',
+                        fontSize: '13px',
+                        fontWeight: 800,
+                        color: i === 0 ? '#3d2500' : 'var(--text-muted)',
+                      }}>{s.n}</span>
+                    </div>
+                    <span className="material-symbols-outlined" style={{ fontSize: '16px', color: i === 0 ? 'var(--primary)' : 'var(--text-muted)' }}>{s.icon}</span>
+                  </div>
+                  <div style={{ fontWeight: 600, fontSize: '12.5px', color: 'var(--text)', marginBottom: '4px' }}>{s.t}</div>
+                  <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', lineHeight: 1.5 }}>{s.d}</div>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
 

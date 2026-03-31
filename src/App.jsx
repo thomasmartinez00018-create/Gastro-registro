@@ -17,35 +17,34 @@ const SECTIONS = [
   {
     title: 'General',
     items: [
-      { id: 'dashboard',     label: 'Inicio',          icon: '⌂'  },
-      { id: 'configuracion', label: 'Configuración',    icon: '⚙️' },
+      { id: 'dashboard',     label: 'Dashboard',        icon: 'dashboard'      },
+      { id: 'configuracion', label: 'Configuración',     icon: 'settings'       },
     ]
   },
   {
     title: 'Catálogos',
     items: [
-      { id: 'productos',     label: 'Productos',        icon: '🧺' },
-      { id: 'proveedores',   label: 'Proveedores',      icon: '🚚' },
+      { id: 'productos',     label: 'Productos',         icon: 'inventory_2'    },
+      { id: 'proveedores',   label: 'Proveedores',       icon: 'factory'        },
     ]
   },
   {
     title: 'Listas de Precios',
     items: [
-      { id: 'importar',      label: 'Importar Lista',   icon: '📋' },
-      { id: 'equivalencias', label: 'Equivalencias',    icon: '⚖️' },
+      { id: 'importar',      label: 'Importar Lista',    icon: 'upload_file'    },
+      { id: 'equivalencias', label: 'Equivalencias',     icon: 'compare_arrows' },
     ]
   },
   {
     title: 'Análisis',
     items: [
-      { id: 'comparador',    label: 'Comparador',           icon: '💰' },
-      { id: 'simulador',     label: 'Simulador de Factura', icon: '🧾' },
+      { id: 'comparador',    label: 'Comparador',        icon: 'bar_chart'      },
+      { id: 'simulador',     label: 'Pedidos',           icon: 'receipt_long'   },
     ]
   },
-  // Solo visible en modo desarrollo
   ...( IS_DEV ? [{
     title: 'Desarrollador',
-    items: [{ id: 'licencias', label: 'Generar Licencias', icon: '🔑' }],
+    items: [{ id: 'licencias', label: 'Generar Licencias', icon: 'key' }],
   }] : []),
 ]
 
@@ -61,35 +60,32 @@ const PAGES = {
   licencias:     GeneradorLicencias,
 }
 
-// Componente interno — tiene acceso al ImportContext
 function AppInner() {
   const [page, setPage] = useState('dashboard')
   const { job } = useImport()
   const Page = PAGES[page] || Dashboard
 
   // Licencia
-  const [licensed,     setLicensed]     = useState(null)  // null = cargando, true/false
-  const [licCliente,   setLicCliente]   = useState('')
+  const [licensed,   setLicensed]   = useState(null)
+  const [licCliente, setLicCliente] = useState('')
 
   useEffect(() => {
-    if (!window.api?.license) { setLicensed(true); return }  // dev sin IPC
+    if (!window.api?.license) { setLicensed(true); return }
     window.api.license.check().then(res => {
       setLicensed(res.activated)
       setLicCliente(res.cliente || '')
-    }).catch(() => setLicensed(true))  // si falla, no bloquear
+    }).catch(() => setLicensed(true))
   }, [])
 
   // Personalización
   const [appSettings, setAppSettings] = useState({ restaurantName: '', logoBase64: '', theme: 'gastronomica' })
 
-  // Aplicar tema y cargar configuración al iniciar
   useEffect(() => {
     const s = loadAppSettings()
     setAppSettings(s)
     applyTheme(s.theme || 'gastronomica')
   }, [])
 
-  // Escuchar cambios de configuración en tiempo real
   useEffect(() => {
     const handler = (e) => {
       const s = e.detail
@@ -100,19 +96,20 @@ function AppInner() {
     return () => window.removeEventListener('app-settings-changed', handler)
   }, [])
 
-  // Exponemos navegación globalmente para que componentes hijos puedan navegar
   useEffect(() => { window._navigateTo = setPage }, [setPage])
 
-  const { restaurantName, logoBase64 } = appSettings
+  const { restaurantName } = appSettings
 
-  // Pantalla de carga mientras verifica licencia
+  // Pantalla de carga
   if (licensed === null) return (
-    <div style={{ position: 'fixed', inset: 0, background: '#0f172a', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <div style={{ color: '#64748b', fontSize: '14px', fontFamily: 'Inter, sans-serif' }}>⏳ Verificando licencia…</div>
+    <div style={{ position: 'fixed', inset: 0, background: '#111316', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ color: '#64748b', fontSize: '13px', fontFamily: 'Inter, sans-serif', display: 'flex', alignItems: 'center', gap: '10px' }}>
+        <span className="material-symbols-outlined" style={{ animation: 'spin 1.2s linear infinite', color: '#fcc570' }}>autorenew</span>
+        Verificando licencia…
+      </div>
     </div>
   )
 
-  // Sin licencia → pantalla de activación
   if (!licensed && !IS_DEV) return (
     <ActivacionScreen onActivated={() => setLicensed(true)} />
   )
@@ -125,24 +122,10 @@ function AppInner() {
 
         {/* Logo / Identidad */}
         <div className="sidebar-logo">
-          {logoBase64 ? (
-            <img
-              src={logoBase64}
-              alt="Logo"
-              style={{
-                width: '48px', height: '48px', objectFit: 'contain',
-                borderRadius: '10px',
-                marginBottom: '8px',
-                background: 'rgba(255,255,255,0.08)',
-              }}
-            />
-          ) : (
-            <div className="sidebar-logo-icon">🍴</div>
-          )}
-          <h1 style={{ wordBreak: 'break-word', textAlign: 'center' }}>
-            {restaurantName || 'Gestión de\nProveedores'}
-          </h1>
-          <p>Sistema gastronómico</p>
+          <div className="sidebar-logo-title">
+            {restaurantName || 'Gastronomic OS'}
+          </div>
+          <p>Supplier Management</p>
         </div>
 
         {/* Navegación */}
@@ -151,7 +134,6 @@ function AppInner() {
             <div key={section.title}>
               <div className="nav-section-title">{section.title}</div>
               {section.items.map(item => {
-                // Indicador animado cuando hay importación activa en segundo plano
                 const isImportando = item.id === 'importar' && job.aiProcessing && page !== 'importar'
                 return (
                   <button
@@ -159,11 +141,13 @@ function AppInner() {
                     className={`nav-item ${page === item.id ? 'active' : ''}`}
                     onClick={() => setPage(item.id)}
                   >
-                    <span className="icon">{item.icon}</span>
+                    <span className="icon">
+                      <span className="material-symbols-outlined">{item.icon}</span>
+                    </span>
                     <span style={{ flex: 1 }}>{item.label}</span>
                     {isImportando && (
                       <span style={{
-                        width: '8px', height: '8px', borderRadius: '50%',
+                        width: '7px', height: '7px', borderRadius: '50%',
                         background: 'var(--accent)',
                         boxShadow: '0 0 6px var(--accent)',
                         animation: 'pulse-dot 1.2s ease-in-out infinite',
@@ -181,21 +165,43 @@ function AppInner() {
         <div className="sidebar-footer">
           <span className="sidebar-footer-badge">v1.2</span>
           <span className="sidebar-footer-text">
-            {job.aiProcessing ? '⏳ Procesando…' : licCliente || 'Gastronomía'}
+            {job.aiProcessing ? 'Procesando…' : licCliente || 'Gastronomía'}
           </span>
         </div>
       </aside>
 
-      {/* ── Contenido ────────────────────────────────────────────────────── */}
-      <main className="main-content">
-        <Page onNavigate={setPage} />
-      </main>
+      {/* ── Content Shell ────────────────────────────────────────────────── */}
+      <div className="content-shell">
 
+        {/* Top Bar */}
+        <header className="top-bar">
+          <div className="top-bar-search">
+            <span className="material-symbols-outlined">search</span>
+            <input type="text" placeholder="Buscar productos o proveedores…" />
+          </div>
+          <div className="top-bar-actions">
+            <button className="top-bar-sync-btn">
+              <span className="material-symbols-outlined">sync</span>
+              Sync Local DB
+            </button>
+            <span className="material-symbols-outlined top-bar-icon">notifications</span>
+            <span className="material-symbols-outlined top-bar-icon">cloud_done</span>
+            <div className="top-bar-avatar">
+              <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>person</span>
+            </div>
+          </div>
+        </header>
+
+        {/* Contenido de la página */}
+        <main className="main-content">
+          <Page onNavigate={setPage} />
+        </main>
+
+      </div>
     </div>
   )
 }
 
-// Raíz — provee el contexto
 export default function App() {
   return (
     <ImportProvider>
