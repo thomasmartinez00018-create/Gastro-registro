@@ -53,12 +53,15 @@
       "icon": "build/icon.ico"
     },
     "nsis": {
-      "oneClick": true,
+      "oneClick": false,
       "perMachine": false,
-      "allowToChangeInstallationDirectory": false,
+      "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Gestión Proveedores"
+      "shortcutName": "Gestión Proveedores",
+      "licenseFile": "build/license.txt",
+      "installerLanguages": ["es_AR"],
+      "language": "3082"
     },
     "mac": {
       "target": "dmg",

@@ -1,0 +1,202 @@
+================================================================================
+   GESTIÓN DE PROVEEDORES — TÉRMINOS Y CONDICIONES DE USO
+   Versión del software: 1.3  |  Última actualización: marzo 2025
+================================================================================
+
+Lea atentamente este documento antes de instalar o utilizar el software.
+Al hacer clic en "Acepto", usted declara haber leído, comprendido y aceptado
+la totalidad de los presentes Términos y Condiciones de Uso (en adelante,
+"los Términos"). Si no está de acuerdo con alguna de las condiciones aquí
+establecidas, no continúe con la instalación.
+
+--------------------------------------------------------------------------------
+1. OBJETO DEL SOFTWARE
+--------------------------------------------------------------------------------
+
+Gestión de Proveedores es una aplicación de escritorio destinada a negocios
+gastronómicos que permite:
+
+  - Administrar catálogos de productos e insumos.
+  - Registrar y gestionar proveedores con sus condiciones comerciales.
+  - Importar y procesar listas de precios en formato Excel o PDF.
+  - Comparar precios entre proveedores con cálculo de impuestos (IVA, IIBB).
+  - Simular órdenes de compra y facturas proforma.
+  - Utilizar inteligencia artificial para la categorización y equivalencia
+    automática de productos (función opcional, requiere clave API de OpenAI).
+
+El software no tiene conexión obligatoria a internet. Toda la información
+ingresada por el usuario se almacena exclusivamente en su equipo local
+mediante una base de datos SQLite.
+
+--------------------------------------------------------------------------------
+2. LICENCIA DE USO
+--------------------------------------------------------------------------------
+
+2.1. El titular del software otorga al usuario una licencia personal,
+     intransferible y no exclusiva para instalar y utilizar este software
+     en un (1) único equipo a la vez.
+
+2.2. La licencia se activa mediante una clave única vinculada al equipo del
+     usuario. Queda prohibida la transferencia de dicha clave a terceros.
+
+2.3. Esta licencia no otorga derechos de propiedad intelectual sobre el
+     software ni sobre ninguno de sus componentes.
+
+--------------------------------------------------------------------------------
+3. RESTRICCIONES DE USO
+--------------------------------------------------------------------------------
+
+Queda expresamente prohibido:
+
+  a) Copiar, reproducir, distribuir o comercializar el software o cualquier
+     parte de él, sin autorización escrita del titular.
+
+  b) Realizar ingeniería inversa, descompilar, desensamblar o intentar
+     obtener el código fuente del software por cualquier medio.
+
+  c) Modificar, adaptar, traducir o crear obras derivadas basadas en el
+     software sin autorización expresa.
+
+  d) Sublicenciar, alquilar, prestar o transferir el software a terceros.
+
+  e) Utilizar el software para fines ilegales, fraudulentos o contrarios
+     a la normativa vigente en la República Argentina.
+
+  f) Eliminar o alterar los avisos de derechos de autor, marcas registradas
+     u otras indicaciones de propiedad incluidas en el software.
+
+--------------------------------------------------------------------------------
+4. INTELIGENCIA ARTIFICIAL Y SERVICIOS DE TERCEROS
+--------------------------------------------------------------------------------
+
+4.1. El módulo de inteligencia artificial del software utiliza la API de
+     OpenAI (plataforma de tercero independiente). Para activar esta función,
+     el usuario debe:
+       - Contar con una cuenta propia en platform.openai.com
+       - Obtener y configurar su propia clave API (VITE_OPENAI_KEY)
+       - Aceptar de forma independiente los términos de uso de OpenAI
+
+4.2. El titular del software NO es responsable por el funcionamiento,
+     disponibilidad, costos, modificaciones o interrupciones del servicio
+     de OpenAI, ni por los resultados generados por dicho modelo de IA.
+
+4.3. Al utilizar la función de IA, el usuario reconoce que cierta información
+     (descripciones de productos) es enviada a los servidores de OpenAI para
+     su procesamiento, de acuerdo con la política de privacidad de dicha empresa.
+     El titular no almacena, intercepta ni comercializa dicha información.
+
+4.4. La función de IA es complementaria y los resultados deben ser verificados
+     por el usuario. El software no garantiza la exactitud de las sugerencias
+     generadas automáticamente.
+
+--------------------------------------------------------------------------------
+5. DATOS, PRIVACIDAD Y ALMACENAMIENTO LOCAL
+--------------------------------------------------------------------------------
+
+5.1. Toda la información cargada en el sistema (productos, proveedores, listas
+     de precios, equivalencias) se almacena únicamente en el equipo del usuario
+     mediante una base de datos local (SQLite). No se envía ni sincroniza
+     automáticamente a ningún servidor externo.
+
+5.2. El titular del software no tiene acceso a los datos ingresados por el
+     usuario en ninguna circunstancia.
+
+5.3. El usuario es el único responsable de realizar copias de seguridad de su
+     base de datos y de proteger el acceso a su equipo.
+
+5.4. Al desinstalar el software, los datos almacenados localmente pueden
+     permanecer en el equipo. El usuario es responsable de eliminarlos si
+     lo considera necesario.
+
+--------------------------------------------------------------------------------
+6. ACTUALIZACIONES Y SOPORTE
+--------------------------------------------------------------------------------
+
+6.1. El titular podrá publicar actualizaciones del software de manera
+     discrecional. Las actualizaciones podrán incluir nuevas funciones,
+     correcciones de errores o cambios en los Términos.
+
+6.2. El uso continuado del software tras la publicación de una actualización
+     implica la aceptación de los nuevos términos.
+
+6.3. El soporte técnico se brinda a criterio del titular y no implica
+     obligación de respuesta en plazos determinados.
+
+--------------------------------------------------------------------------------
+7. EXCLUSIÓN DE GARANTÍAS
+--------------------------------------------------------------------------------
+
+El software se provee "tal cual" (as is), sin garantías de ningún tipo,
+expresas o implícitas, incluyendo pero no limitándose a:
+
+  - Garantías de comerciabilidad o adecuación para un propósito particular.
+  - Garantía de funcionamiento ininterrumpido o libre de errores.
+  - Garantía de compatibilidad con todos los sistemas operativos o hardware.
+  - Exactitud de los cálculos impositivos (IVA, percepciones, impuestos
+    internos). Los valores calculados son estimativos y deben ser verificados
+    por un profesional contable habilitado.
+
+El usuario asume la totalidad del riesgo inherente al uso del software.
+
+--------------------------------------------------------------------------------
+8. LIMITACIÓN DE RESPONSABILIDAD
+--------------------------------------------------------------------------------
+
+En ningún caso el titular del software será responsable por:
+
+  a) Pérdida de datos, lucro cesante, pérdida de negocio o cualquier daño
+     indirecto, incidental, especial o consecuente derivado del uso o la
+     imposibilidad de uso del software.
+
+  b) Errores en los precios, cálculos impositivos o equivalencias de productos
+     generados por el sistema o por el módulo de inteligencia artificial.
+
+  c) Decisiones de compra, comerciales o financieras tomadas con base en la
+     información provista por el software.
+
+  d) Daños producidos por el acceso no autorizado de terceros al equipo del
+     usuario o a su base de datos local.
+
+La responsabilidad máxima del titular, en cualquier caso, no podrá exceder
+el monto efectivamente abonado por el usuario en concepto de licencia.
+
+--------------------------------------------------------------------------------
+9. PROPIEDAD INTELECTUAL
+--------------------------------------------------------------------------------
+
+El software, su código fuente, diseño, estructura, interfaces, logotipos,
+documentación y todos los elementos que lo componen son propiedad intelectual
+del titular y están protegidos por las leyes de derechos de autor vigentes
+en la República Argentina (Ley 11.723) y los tratados internacionales
+aplicables. Todos los derechos reservados.
+
+--------------------------------------------------------------------------------
+10. TERMINACIÓN DE LA LICENCIA
+--------------------------------------------------------------------------------
+
+La licencia se extingue automáticamente en caso de incumplimiento de
+cualquiera de los presentes Términos. Ante la terminación, el usuario deberá
+cesar todo uso del software y desinstalarlo de su equipo. La extinción de la
+licencia no genera derecho a reembolso alguno.
+
+--------------------------------------------------------------------------------
+11. LEY APLICABLE Y JURISDICCIÓN
+--------------------------------------------------------------------------------
+
+Los presentes Términos se rigen por las leyes de la República Argentina.
+Cualquier controversia que surja en relación con este software o estos
+Términos será sometida a la jurisdicción de los tribunales ordinarios de la
+Ciudad Autónoma de Buenos Aires, con renuncia expresa a cualquier otro fuero
+que pudiera corresponder.
+
+--------------------------------------------------------------------------------
+12. CONTACTO
+--------------------------------------------------------------------------------
+
+Para consultas sobre licencias, soporte técnico o estos Términos y
+Condiciones, comuníquese a través de los canales oficiales indicados en el
+momento de la adquisición del software.
+
+================================================================================
+   Al hacer clic en "Acepto" confirma que ha leído y acepta estos Términos.
+================================================================================
