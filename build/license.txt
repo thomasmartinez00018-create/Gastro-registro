@@ -70,11 +70,9 @@ Queda expresamente prohibido:
 --------------------------------------------------------------------------------
 
 4.1. El módulo de inteligencia artificial del software utiliza la API de
-     OpenAI (plataforma de tercero independiente). Para activar esta función,
-     el usuario debe:
-       - Contar con una cuenta propia en platform.openai.com
-       - Obtener y configurar su propia clave API (VITE_OPENAI_KEY)
-       - Aceptar de forma independiente los términos de uso de OpenAI
+     OpenAI (plataforma de tercero independiente). Dicha integración está
+     gestionada por el titular del software. El usuario no necesita
+     configurar ninguna clave API para acceder a esta función.
 
 4.2. El titular del software NO es responsable por el funcionamiento,
      disponibilidad, costos, modificaciones o interrupciones del servicio
