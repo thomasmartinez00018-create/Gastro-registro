@@ -128,6 +128,32 @@ function initDB() {
     );
   `)
 
+  // Pedidos y su historial
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS pedidos (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      fecha       TEXT NOT NULL,
+      restaurante TEXT,
+      id_proveedor TEXT,
+      proveedor   TEXT NOT NULL,
+      notas       TEXT,
+      total       REAL,
+      estado      TEXT DEFAULT 'enviado',
+      nro_orden   TEXT,
+      created_at  TEXT DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS pedido_items (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      id_pedido       INTEGER NOT NULL REFERENCES pedidos(id) ON DELETE CASCADE,
+      codigo_producto TEXT,
+      producto        TEXT NOT NULL,
+      cantidad        REAL DEFAULT 1,
+      unidad          TEXT,
+      precio_unitario REAL,
+      subtotal        REAL
+    );
+  `)
+
   // Tabla de activación / licencia
   db.exec(`
     CREATE TABLE IF NOT EXISTS activation (
@@ -583,6 +609,40 @@ ipcMain.handle('dialog:saveFile', async (_, { defaultName }) => {
   })
   if (result.canceled) return null
   return result.filePath
+})
+
+// ─── Pedidos ──────────────────────────────────────────────────────────────────
+ipcMain.handle('pedidos:getAll', () => {
+  const pedidos = db.prepare('SELECT * FROM pedidos ORDER BY created_at DESC').all()
+  return pedidos.map(p => ({
+    ...p,
+    items: db.prepare('SELECT * FROM pedido_items WHERE id_pedido = ?').all(p.id),
+  }))
+})
+
+ipcMain.handle('pedidos:create', (_, { pedido, items }) => {
+  const r = db.prepare(`
+    INSERT INTO pedidos (fecha, restaurante, id_proveedor, proveedor, notas, total, estado, nro_orden)
+    VALUES (@fecha, @restaurante, @id_proveedor, @proveedor, @notas, @total, @estado, @nro_orden)
+  `).run(pedido)
+  const id = r.lastInsertRowid
+  const ins = db.prepare(`
+    INSERT INTO pedido_items (id_pedido, codigo_producto, producto, cantidad, unidad, precio_unitario, subtotal)
+    VALUES (@id_pedido, @codigo_producto, @producto, @cantidad, @unidad, @precio_unitario, @subtotal)
+  `)
+  for (const item of (items || [])) ins.run({ ...item, id_pedido: id })
+  return { id, ...pedido, items }
+})
+
+ipcMain.handle('pedidos:updateEstado', (_, { id, estado }) => {
+  db.prepare('UPDATE pedidos SET estado = ? WHERE id = ?').run(estado, id)
+  return { ok: true }
+})
+
+ipcMain.handle('pedidos:delete', (_, id) => {
+  db.prepare('DELETE FROM pedido_items WHERE id_pedido = ?').run(id)
+  db.prepare('DELETE FROM pedidos WHERE id = ?').run(id)
+  return { ok: true }
 })
 
 // ─── Zoom ─────────────────────────────────────────────────────────────────────

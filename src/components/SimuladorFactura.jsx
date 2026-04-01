@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import api from '../api'
 import { loadAppSettings } from './Configuracion'
+import { buildWALink, buildOrderMessage } from '../utils/whatsapp'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const fmt = (n) =>
@@ -54,6 +55,10 @@ export default function SimuladorFactura() {
   const [showDropdown, setShowDropdown]   = useState(false)
 
   const [appSettings, setAppSettings]     = useState({ restaurantName: '', logoBase64: '' })
+  const [historialModal, setHistorialModal] = useState(false)
+  const [historial,      setHistorial]      = useState([])
+  const [histLoading,    setHistLoading]    = useState(false)
+  const [waSending,      setWaSending]      = useState(false)
   const [fechaFactura, setFechaFactura]   = useState(todayStr())
   const [nroOrden, setNroOrden]           = useState('')
   const [notas, setNotas]                 = useState('')
@@ -66,6 +71,15 @@ export default function SimuladorFactura() {
     const s = loadAppSettings()
     setAppSettings(s)
   }, [])
+
+  const loadHistorial = async () => {
+    if (!window.api?.pedidos) return
+    setHistLoading(true)
+    try {
+      const data = await api.pedidos.getAll()
+      setHistorial(data)
+    } finally { setHistLoading(false) }
+  }
 
   const load = async () => {
     setLoading(true)
@@ -144,6 +158,59 @@ export default function SimuladorFactura() {
 
   const handlePrint = () => window.print()
 
+  const handleEnviarWA = async () => {
+    if (!prov || !items.length) return
+    setWaSending(true)
+    try {
+      const restaurante = appSettings.restaurantName || ''
+      const message = buildOrderMessage({
+        restaurante,
+        proveedor: prov.proveedor,
+        fecha: fechaFactura,
+        items: items.map(it => ({ producto: it.nombre, cantidad: it.qty, unidad: '' })),
+        total: totalFinal,
+      })
+
+      // Guardar en historial
+      if (window.api?.pedidos) {
+        await api.pedidos.create({
+          pedido: {
+            fecha: fechaFactura,
+            restaurante,
+            id_proveedor: prov.id_proveedor,
+            proveedor: prov.proveedor,
+            notas: notas || null,
+            total: totalFinal,
+            estado: 'enviado',
+            nro_orden: nroOrden || null,
+          },
+          items: items.map(it => ({
+            codigo_producto: it.codigoProd,
+            producto: it.nombre,
+            cantidad: it.qty,
+            unidad: '',
+            precio_unitario: it.precio,
+            subtotal: (it.precio ?? 0) * it.qty,
+          })),
+        })
+      }
+
+      // Abrir WhatsApp
+      const link = prov.whatsapp ? buildWALink(prov.whatsapp, message) : null
+      if (link) {
+        window.open(link, '_blank')
+      } else {
+        const textarea = document.createElement('textarea')
+        textarea.value = message
+        document.body.appendChild(textarea)
+        textarea.select()
+        document.execCommand('copy')
+        document.body.removeChild(textarea)
+        alert(`📋 Mensaje copiado.\n\n${prov.proveedor} no tiene WhatsApp cargado.\nAgregalo en Proveedores para enviar directo.`)
+      }
+    } finally { setWaSending(false) }
+  }
+
   // ── UI ────────────────────────────────────────────────────────────────────
   return (
     <>
@@ -153,6 +220,13 @@ export default function SimuladorFactura() {
           <p className="page-subtitle">Armá una orden de compra y calculá el total con impuestos</p>
         </div>
         <div style={{ display: 'flex', gap: '8px' }}>
+          <button
+            className="btn btn-secondary"
+            onClick={() => { setHistorialModal(true); loadHistorial() }}
+          >
+            <span className="material-symbols-outlined" style={{ fontSize: '15px' }}>history</span>
+            Historial
+          </button>
           <button className="btn btn-secondary" onClick={load} disabled={loading}>
             {loading ? '⏳...' : '↺ Actualizar'}
           </button>
@@ -664,6 +738,10 @@ export default function SimuladorFactura() {
                 <button className="btn btn-accent" onClick={handlePrint} style={{ fontSize: '14px', padding: '10px 28px' }}>
                   🖨 Imprimir / Guardar PDF
                 </button>
+                <button className="btn btn-accent" onClick={handleEnviarWA} disabled={waSending || !prov || !items.length}>
+                  <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>send</span>
+                  {waSending ? 'Enviando...' : 'Pedir por WhatsApp'}
+                </button>
                 <button className="btn btn-secondary" onClick={clearItems} style={{ fontSize: '14px' }}>
                   🗑 Limpiar orden
                 </button>
@@ -673,6 +751,77 @@ export default function SimuladorFactura() {
           </div>
         )}
       </div>
+
+      {/* ── Modal Historial de Pedidos ──────────────────────────────────────── */}
+      {historialModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+          <div style={{ background: 'var(--surface)', borderRadius: '14px', width: '100%', maxWidth: '720px', maxHeight: '80vh', display: 'flex', flexDirection: 'column', border: '1px solid var(--border)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '18px 20px', borderBottom: '1px solid var(--border)' }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '15px' }}>Historial de pedidos</h3>
+                <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>{historial.length} pedido{historial.length !== 1 ? 's' : ''} guardados</div>
+              </div>
+              <button className="btn btn-ghost btn-sm" onClick={() => setHistorialModal(false)}>✕</button>
+            </div>
+            <div style={{ overflowY: 'auto', flex: 1, padding: '12px 20px' }}>
+              {histLoading && <div style={{ textAlign: 'center', padding: '30px', color: 'var(--text-muted)' }}>Cargando…</div>}
+              {!histLoading && historial.length === 0 && (
+                <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)', fontSize: '13px' }}>
+                  <div style={{ fontSize: '32px', marginBottom: '10px' }}>📋</div>
+                  <div>Todavía no hay pedidos guardados.</div>
+                  <div style={{ marginTop: '6px', fontSize: '12px' }}>Los pedidos se guardan automáticamente cuando usás "Pedir por WhatsApp".</div>
+                </div>
+              )}
+              {!histLoading && historial.map(p => (
+                <div key={p.id} style={{ background: 'var(--surface-2)', borderRadius: '10px', marginBottom: '10px', overflow: 'hidden', border: '1px solid var(--border)' }}>
+                  <div style={{ padding: '10px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--surface-3)' }}>
+                    <div>
+                      <span style={{ fontWeight: 700, fontSize: '14px' }}>{p.proveedor}</span>
+                      {p.nro_orden && <span style={{ marginLeft: '8px', fontSize: '11px', background: 'var(--primary-light)', color: 'var(--primary)', borderRadius: '4px', padding: '1px 6px' }}>{p.nro_orden}</span>}
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                      <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{new Date(p.fecha + 'T00:00:00').toLocaleDateString('es-AR')}</span>
+                      <span style={{ fontWeight: 800, color: 'var(--primary)', fontSize: '14px' }}>
+                        {p.total > 0 ? new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 }).format(p.total) : '—'}
+                      </span>
+                      <select
+                        value={p.estado}
+                        onChange={async e => {
+                          await api.pedidos.updateEstado({ id: p.id, estado: e.target.value })
+                          loadHistorial()
+                        }}
+                        style={{ fontSize: '11px', padding: '2px 6px', borderRadius: '6px', border: '1px solid var(--border)', background: p.estado === 'recibido' ? 'rgba(110,231,183,0.15)' : p.estado === 'cancelado' ? 'rgba(255,100,100,0.12)' : 'rgba(252,197,112,0.12)', color: p.estado === 'recibido' ? 'var(--success)' : p.estado === 'cancelado' ? 'var(--danger)' : 'var(--primary)', fontFamily: 'inherit', cursor: 'pointer' }}
+                      >
+                        <option value="enviado">📤 Enviado</option>
+                        <option value="recibido">✅ Recibido</option>
+                        <option value="cancelado">❌ Cancelado</option>
+                      </select>
+                      <button
+                        className="btn btn-ghost btn-xs"
+                        style={{ color: 'var(--danger)' }}
+                        onClick={async () => {
+                          if (!window.confirm('¿Eliminar este pedido del historial?')) return
+                          await api.pedidos.delete(p.id)
+                          loadHistorial()
+                        }}
+                        title="Eliminar"
+                      >✕</button>
+                    </div>
+                  </div>
+                  <div style={{ padding: '6px 14px 8px' }}>
+                    {(p.items || []).map((it, idx) => (
+                      <div key={idx} style={{ fontSize: '12px', padding: '3px 0', display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-light)' }}>
+                        <span>{it.producto} <span style={{ color: 'var(--text-muted)' }}>× {it.cantidad} {it.unidad || ''}</span></span>
+                        <span style={{ color: 'var(--text-muted)' }}>{it.subtotal > 0 ? new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 }).format(it.subtotal) : ''}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </>
   )
 }

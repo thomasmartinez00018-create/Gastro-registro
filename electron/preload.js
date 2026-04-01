@@ -64,6 +64,13 @@ contextBridge.exposeInMainWorld('api', {
     pushToOPS: (url) => ipcRenderer.invoke('sync:pushToOPS', url),
     pullFromOPS: (url) => ipcRenderer.invoke('sync:pullFromOPS', url),
   },
+  // Pedidos
+  pedidos: {
+    getAll:        ()             => ipcRenderer.invoke('pedidos:getAll'),
+    create:        (data)         => ipcRenderer.invoke('pedidos:create', data),
+    updateEstado:  ({ id, estado }) => ipcRenderer.invoke('pedidos:updateEstado', { id, estado }),
+    delete:        (id)           => ipcRenderer.invoke('pedidos:delete', id),
+  },
   // Backup / Restore
   backup: {
     export:  () => ipcRenderer.invoke('backup:export'),

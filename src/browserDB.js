@@ -268,4 +268,33 @@ const file = {
   },
 }
 
-export const browserDB = { productos, proveedores, listas, equivalencias, comparador, maxirest, dialog, file }
+// ── Pedidos (browser stub — usa localStorage) ─────────────────────────────────
+let _pedidoIdSeq = 0
+const pedidos = {
+  getAll: async () => {
+    const ps = get('pedidos')
+    return ps.map(p => ({ ...p, items: get('pedido_items').filter(i => i.id_pedido === p.id) }))
+  },
+  create: async ({ pedido, items }) => {
+    const ps = get('pedidos')
+    const id = nextId(ps) + (++_pedidoIdSeq)
+    const now = new Date().toISOString().replace('T', ' ').slice(0, 19)
+    const newPedido = { id, ...pedido, created_at: now }
+    set('pedidos', [...ps, newPedido])
+    const allItems = get('pedido_items')
+    const newItems = (items || []).map((it, idx) => ({ id: Date.now() + idx, ...it, id_pedido: id }))
+    set('pedido_items', [...allItems, ...newItems])
+    return { ...newPedido, items: newItems }
+  },
+  updateEstado: async ({ id, estado }) => {
+    set('pedidos', get('pedidos').map(p => p.id === id ? { ...p, estado } : p))
+    return { ok: true }
+  },
+  delete: async (id) => {
+    set('pedidos', get('pedidos').filter(p => p.id !== id))
+    set('pedido_items', get('pedido_items').filter(i => i.id_pedido !== id))
+    return { ok: true }
+  },
+}
+
+export const browserDB = { productos, proveedores, listas, equivalencias, comparador, maxirest, dialog, file, pedidos }

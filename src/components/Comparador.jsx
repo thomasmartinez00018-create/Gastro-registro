@@ -1,6 +1,8 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import api from '../api'
 import { parsePresentacion } from '../utils/presentacion'
+import { buildWALink, buildOrderMessage } from '../utils/whatsapp'
+import { loadAppSettings } from './Configuracion'
 
 // ─── helpers de precio ────────────────────────────────────────────────────────
 function effectivePxm(row) {
@@ -63,6 +65,10 @@ export default function Comparador() {
 
   // ── selección para exportar (modo comparador) ──────────────────────────────
   const [selectedProds, setSelectedProds] = useState(new Set())
+
+  // ── settings ────────────────────────────────────────────────────────────────
+  const [appSettings, setAppSettings] = useState({ restaurantName: '' })
+  useEffect(() => { setAppSettings(loadAppSettings()) }, [])
 
   // ── lista de compra ────────────────────────────────────────────────────────
   const [listaItems,    setListaItems]    = useState([])   // {codigo,producto,categoria,unidad_base,cantidad}
@@ -328,7 +334,8 @@ td{padding:5px 8px;border-bottom:1px solid #f0f0f0}tr.best td{background:#f0fdf4
     const best = rows[0]; const bestPxm = best ? adjustedPxm(best) : null
     return {
       ...item,
-      bestProveedor: best?.proveedor || best?.id_proveedor || null,
+      bestProveedor:   best?.proveedor || best?.id_proveedor || null,
+      bestIdProveedor: best?.id_proveedor || null,
       bestPxm,
       subtotal:  bestPxm != null ? bestPxm * item.cantidad : null,
       opciones:  rows,
@@ -342,12 +349,71 @@ td{padding:5px 8px;border-bottom:1px solid #f0f0f0}tr.best td{background:#f0fdf4
     const m = {}
     listaConPrecios.forEach(it => {
       if (!it.bestProveedor) { if (!m['__sin_datos__']) m['__sin_datos__'] = { items: [], total: 0 }; m['__sin_datos__'].items.push(it); return }
-      if (!m[it.bestProveedor]) m[it.bestProveedor] = { items: [], total: 0 }
+      if (!m[it.bestProveedor]) m[it.bestProveedor] = { items: [], total: 0, id_proveedor: it.bestIdProveedor }
       m[it.bestProveedor].items.push(it)
       m[it.bestProveedor].total += it.subtotal || 0
     })
     return m
   }, [listaConPrecios])
+
+  // ─── Enviar pedido por WhatsApp ───────────────────────────────────────────────
+  const handleEnviarPedido = async (provNombre, provData) => {
+    const provInfo = proveedores.find(p => p.id_proveedor === provData.id_proveedor)
+    const waNumber = provInfo?.whatsapp
+    const fecha    = new Date().toISOString().split('T')[0]
+    const restaurante = appSettings?.restaurantName || ''
+
+    const message = buildOrderMessage({
+      restaurante,
+      proveedor: provNombre,
+      fecha,
+      items: provData.items,
+      total: provData.total,
+    })
+
+    // Guardar en historial
+    if (window.api?.pedidos) {
+      try {
+        await api.pedidos.create({
+          pedido: {
+            fecha,
+            restaurante,
+            id_proveedor: provData.id_proveedor || null,
+            proveedor: provNombre,
+            notas: null,
+            total: provData.total,
+            estado: 'enviado',
+            nro_orden: null,
+          },
+          items: provData.items.map(it => ({
+            codigo_producto: it.codigo,
+            producto: it.producto,
+            cantidad: it.cantidad,
+            unidad: it.unidadLabel || it.unidad_base || '',
+            precio_unitario: it.bestPxm,
+            subtotal: it.subtotal,
+          })),
+        })
+      } catch (e) {
+        console.warn('[Comparador] No se pudo guardar pedido:', e.message)
+      }
+    }
+
+    // Abrir WhatsApp
+    const link = waNumber ? buildWALink(waNumber, message) : null
+    if (link) {
+      window.open(link, '_blank')
+    } else {
+      // Si no hay número, mostrar el mensaje para copiar
+      const textarea = document.createElement('textarea')
+      textarea.value = message
+      document.body.appendChild(textarea)
+      textarea.select()
+      document.execCommand('copy')
+      document.body.removeChild(textarea)
+      alert(`📋 Mensaje copiado al portapapeles.\n\n${provNombre} no tiene número de WhatsApp cargado.\nPodés pegarlo directamente en la conversación.`)
+    }
+  }
 
   // Export lista → Excel
   const handleExportListaExcel = async () => {
@@ -942,8 +1008,18 @@ tr.other-row td.pxm{color:#6b7280}
                                 </div>
                               ))}
                             </div>
-                            <div style={{ padding: '8px 14px', textAlign: 'right', fontSize: '12px', color: 'var(--text-muted)' }}>
-                              {pitems.length} ítem{pitems.length !== 1 ? 's' : ''}
+                            <div style={{ padding: '8px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                                {pitems.length} ítem{pitems.length !== 1 ? 's' : ''}
+                              </span>
+                              <button
+                                className="btn btn-accent btn-sm"
+                                style={{ gap: '5px', fontSize: '12px' }}
+                                onClick={() => handleEnviarPedido(prov, { items: pitems, total, id_proveedor: listaByProv[prov].id_proveedor })}
+                              >
+                                <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>send</span>
+                                Pedir por WhatsApp
+                              </button>
                             </div>
                           </div>
                         ))}
