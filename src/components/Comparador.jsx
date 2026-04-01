@@ -65,9 +65,10 @@ export default function Comparador() {
   const [selectedProds, setSelectedProds] = useState(new Set())
 
   // ── lista de compra ────────────────────────────────────────────────────────
-  const [listaItems,   setListaItems]   = useState([])   // {codigo,producto,categoria,unidad_base,cantidad}
-  const [listaSearch,  setListaSearch]  = useState('')
-  const [listaLoading, setListaLoading] = useState(false)
+  const [listaItems,    setListaItems]    = useState([])   // {codigo,producto,categoria,unidad_base,cantidad}
+  const [listaSearch,   setListaSearch]   = useState('')
+  const [listaSearchCat, setListaSearchCat] = useState('')
+  const [listaLoading,  setListaLoading]  = useState(false)
 
   // ─── impuestos por proveedor ────────────────────────────────────────────────
   const provMap = useMemo(() => {
@@ -329,59 +330,191 @@ td{padding:5px 8px;border-bottom:1px solid #f0f0f0}tr.best td{background:#f0fdf4
     } catch (e) { alert(`Error: ${e.message}`) } finally { setExporting(false) }
   }
 
-  // Export lista → PDF
+  // Export lista → PDF (Auditoría de Precios)
   const handleExportListaPDF = () => {
     if (!listaItems.length) return
     const date = new Date().toLocaleDateString('es-AR', { day: '2-digit', month: 'long', year: 'numeric' })
+
+    // ── métricas de ahorro ─────────────────────────────────────────────────
+    const conDatos = listaConPrecios.filter(i => i.bestPxm != null)
+    const sinDatos = listaConPrecios.filter(i => i.bestPxm == null)
+
+    // ahorro potencial: para cada prod con >1 proveedor, máximo vs mínimo
+    let ahorroTotal = 0
+    let prodConAhorro = 0
+    listaConPrecios.forEach(it => {
+      if (!it.opciones || it.opciones.length < 2) return
+      const ps = it.opciones.map(r => adjustedPxm(r)).filter(p => p != null && p > 0)
+      if (ps.length < 2) return
+      const minP = Math.min(...ps); const maxP = Math.max(...ps)
+      if (maxP > minP) {
+        ahorroTotal += (maxP - minP) * it.cantidad
+        prodConAhorro++
+      }
+    })
+
+    // resumen por categoría
+    const catMap = {}
+    listaConPrecios.forEach(it => {
+      const cat = it.categoria || 'Sin categoría'
+      if (!catMap[cat]) catMap[cat] = { total: 0, items: 0 }
+      catMap[cat].items++
+      catMap[cat].total += it.subtotal || 0
+    })
+
+    const fmtH = n => n != null ? `$${Number(n).toLocaleString('es-AR', { maximumFractionDigits: 2 })}` : '—'
+
     let html = `<!DOCTYPE html><html lang="es"><head><meta charset="utf-8">
-<style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;font-size:12px;color:#111}
-.hdr{padding:18px 24px 12px;border-bottom:2px solid #e07b2c;display:flex;justify-content:space-between;margin-bottom:18px}
-.htitle{font-size:20px;font-weight:800}.hmeta{font-size:11px;color:#666;margin-top:3px}.hdate{font-size:11px;color:#666}
-.section{margin-bottom:20px;page-break-inside:avoid}
-.sh{background:#0f172a;color:#f1f5f9;padding:7px 14px;font-size:13px;font-weight:700;display:flex;justify-content:space-between}
-.sh span{font-size:12px;opacity:.8}
-table{width:100%;border-collapse:collapse;font-size:11px}th{background:#f5f5f5;padding:5px 8px;text-align:left;font-weight:700;font-size:10px;text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid #ddd}
-td{padding:5px 8px;border-bottom:1px solid #f0f0f0}
-.total-row td{font-weight:700;background:#f0fdf4;border-top:2px solid #16a34a}
-.grand{text-align:right;padding:14px 0;font-size:16px;font-weight:800;color:#111}
-@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}</style>
-<title>Lista de Compra</title></head><body>
-<div class="hdr"><div><div class="htitle">🛒 Lista de Compra</div><div class="hmeta">${listaItems.length} productos · ${conImpuestos ? 'Precios con impuestos' : 'Precios de lista'}</div></div><div class="hdate">${date}</div></div>`
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Arial,sans-serif;font-size:12px;color:#111;background:#fff}
+.hdr{padding:20px 24px 14px;border-bottom:3px solid #d4a024;display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:20px}
+.htitle{font-size:22px;font-weight:900;color:#111;letter-spacing:-.3px}
+.hsub{font-size:11px;color:#666;margin-top:4px}
+.hdate{font-size:11px;color:#666;text-align:right}
+.summary{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:22px;page-break-inside:avoid}
+.scard{background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:12px 14px}
+.scard-num{font-size:22px;font-weight:900;color:#d4a024;line-height:1}
+.scard-lbl{font-size:10px;color:#6b7280;margin-top:4px;text-transform:uppercase;letter-spacing:.04em}
+.scard.green .scard-num{color:#16a34a}
+.scard.red .scard-num{color:#dc2626}
+.section-title{font-size:13px;font-weight:800;color:#111;margin:18px 0 8px;text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid #e5e7eb;padding-bottom:6px;page-break-after:avoid}
+table{width:100%;border-collapse:collapse;font-size:11px;margin-bottom:4px}
+th{background:#1e293b;color:#f1f5f9;padding:6px 8px;text-align:left;font-weight:700;font-size:10px;text-transform:uppercase;letter-spacing:.04em}
+td{padding:5px 8px;border-bottom:1px solid #f0f0f0;vertical-align:top}
+tr.best-row td{background:#fefce8}
+tr.best-row td.pxm{color:#15803d;font-weight:800}
+tr.other-row td.pxm{color:#6b7280}
+.badge-best{background:#d4a024;color:#fff;font-size:9px;font-weight:700;padding:1px 5px;border-radius:4px;white-space:nowrap}
+.badge-cat{background:#e5e7eb;color:#374151;font-size:9px;padding:1px 5px;border-radius:4px}
+.prov-section{margin-bottom:16px;page-break-inside:avoid}
+.prov-header{background:#1e293b;color:#f1f5f9;padding:8px 14px;display:flex;justify-content:space-between;align-items:center;border-radius:6px 6px 0 0}
+.prov-header-name{font-weight:700;font-size:13px}
+.prov-header-total{font-weight:800;color:#fcd34d;font-size:14px}
+.grand{text-align:right;padding:16px 0 0;font-size:18px;font-weight:900;color:#111;border-top:2px solid #e5e7eb;margin-top:12px}
+.ahorro-box{background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:12px 16px;margin-bottom:20px;display:flex;align-items:center;gap:14px;page-break-inside:avoid}
+.no-data{background:#fef9c3;border:1px solid #fde68a;padding:8px 12px;border-radius:6px;font-size:11px;color:#92400e;margin-top:12px}
+.cat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:20px}
+.cat-card{border:1px solid #e5e7eb;border-radius:6px;padding:8px 10px}
+.cat-name{font-weight:700;font-size:11px;color:#374151}
+.cat-total{font-size:13px;font-weight:800;color:#d4a024;margin-top:2px}
+.cat-items{font-size:10px;color:#9ca3af}
+@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}.prov-section{page-break-inside:avoid}}
+</style>
+<title>Auditoría de Precios</title></head><body>
 
-    // Tabla por proveedor
-    for (const [prov, { items: pitems, total }] of Object.entries(listaByProv)) {
-      if (prov === '__sin_datos__') continue
-      html += `<div class="section"><div class="sh">${prov}<span>Subtotal: ${fmt(total)}</span></div>
-<table><thead><tr><th>Producto</th><th>Código</th><th>Cantidad</th><th>Unidad</th><th>Precio/unidad</th><th>Subtotal</th></tr></thead><tbody>`
-      pitems.forEach(it => {
-        html += `<tr><td>${it.producto}</td><td style="font-family:monospace">${it.codigo}</td><td>${it.cantidad}</td><td>${it.unidadLabel || it.unidad_base}</td><td>${fmt(it.bestPxm)}</td><td style="font-weight:700">${fmt(it.subtotal)}</td></tr>`
-      })
-      html += `</tbody></table></div>`
+<div class="hdr">
+  <div>
+    <div class="htitle">📊 Auditoría de Precios</div>
+    <div class="hsub">${listaItems.length} productos analizados · ${conImpuestos ? 'Precios con IVA y otros impuestos' : 'Precios de lista sin impuestos'}</div>
+  </div>
+  <div class="hdate">${date}</div>
+</div>
+
+<div class="summary">
+  <div class="scard"><div class="scard-num">${listaItems.length}</div><div class="scard-lbl">Productos</div></div>
+  <div class="scard"><div class="scard-num">${Object.keys(listaByProv).filter(k=>k!=='__sin_datos__').length}</div><div class="scard-lbl">Proveedores</div></div>
+  <div class="scard green"><div class="scard-num">${fmtH(listaTotal)}</div><div class="scard-lbl">Total estimado (mejor precio)</div></div>
+  <div class="scard ${ahorroTotal > 0 ? 'red' : ''}"><div class="scard-num">${ahorroTotal > 0 ? fmtH(ahorroTotal) : '—'}</div><div class="scard-lbl">Ahorro potencial vs precio más caro</div></div>
+</div>`
+
+    // Ahorro potencial si existe
+    if (ahorroTotal > 0) {
+      html += `<div class="ahorro-box">
+  <span style="font-size:24px">💡</span>
+  <div>
+    <div style="font-weight:700;font-size:13px;color:#15803d">Ahorro potencial: ${fmtH(ahorroTotal)}</div>
+    <div style="font-size:11px;color:#166534;margin-top:2px">${prodConAhorro} producto${prodConAhorro!==1?'s':''} con diferencia de precio entre proveedores. Elegir siempre el mejor proveedor por producto genera este ahorro estimado.</div>
+  </div>
+</div>`
     }
+
+    // Resumen por categoría
+    const catEntries = Object.entries(catMap).filter(([,v]) => v.total > 0).sort((a,b) => b[1].total - a[1].total)
+    if (catEntries.length > 1) {
+      html += `<div class="section-title">Distribución por categoría</div>
+<div class="cat-grid">`
+      catEntries.forEach(([cat, v]) => {
+        html += `<div class="cat-card"><div class="cat-name">${cat}</div><div class="cat-total">${fmtH(v.total)}</div><div class="cat-items">${v.items} producto${v.items!==1?'s':''}</div></div>`
+      })
+      html += `</div>`
+    }
+
+    // ── Tabla principal: mejor precio por producto ─────────────────────────
+    html += `<div class="section-title">Mejor precio por producto</div>
+<table>
+<thead><tr><th>Producto</th><th>Categoría</th><th>Cant.</th><th>Mejor proveedor</th><th>Precio/unidad</th><th>Subtotal</th><th>Alternativas (▲% vs mejor)</th></tr></thead>
+<tbody>`
+    listaConPrecios.forEach(it => {
+      const alts = it.opciones?.slice(1) || []
+      const altStr = alts.slice(0,3).map(r => {
+        const p = adjustedPxm(r)
+        const diff = it.bestPxm && p ? ((p - it.bestPxm)/it.bestPxm*100).toFixed(0) : null
+        return `${r.proveedor||r.id_proveedor}${diff!=null&&diff>0?` <span style="color:#dc2626">▲${diff}%</span>`:''}`
+      }).join(' &nbsp;|&nbsp; ')
+      html += `<tr class="${it.bestPxm!=null?'best-row':''}">
+  <td style="font-weight:600">${it.producto}</td>
+  <td><span class="badge-cat">${it.categoria||'—'}</span></td>
+  <td>${it.cantidad} ${it.unidadLabel||it.unidad_base}</td>
+  <td>${it.bestProveedor?`<span class="badge-best">⭐ ${it.bestProveedor}</span>`:'<span style="color:#9ca3af">Sin datos</span>'}</td>
+  <td class="pxm">${fmtH(it.bestPxm)}</td>
+  <td style="font-weight:700">${fmtH(it.subtotal)}</td>
+  <td style="font-size:10px;color:#6b7280">${altStr||'—'}</td>
+</tr>`
+    })
+    html += `</tbody></table>
+<div class="grand">TOTAL ESTIMADO (MEJOR PRECIO): ${fmtH(listaTotal)}</div>`
+
+    // ── Pedidos por proveedor ──────────────────────────────────────────────
+    const provEntries = Object.entries(listaByProv).filter(([k]) => k !== '__sin_datos__').sort((a,b) => b[1].total - a[1].total)
+    if (provEntries.length > 0) {
+      html += `<div class="section-title" style="margin-top:28px">Pedidos por proveedor</div>`
+      provEntries.forEach(([prov, { items: pitems, total }]) => {
+        html += `<div class="prov-section">
+<div class="prov-header"><span class="prov-header-name">${prov}</span><span class="prov-header-total">${fmtH(total)}</span></div>
+<table><thead><tr><th>Producto</th><th>Categoría</th><th>Cantidad</th><th>Unidad</th><th>$/unidad</th><th>Subtotal</th></tr></thead><tbody>`
+        pitems.forEach(it => {
+          html += `<tr><td>${it.producto}</td><td><span class="badge-cat">${it.categoria||'—'}</span></td><td>${it.cantidad}</td><td>${it.unidadLabel||it.unidad_base}</td><td>${fmtH(it.bestPxm)}</td><td style="font-weight:700">${fmtH(it.subtotal)}</td></tr>`
+        })
+        html += `</tbody></table></div>`
+      })
+    }
+
     // Sin datos
-    if (listaByProv['__sin_datos__']?.items.length) {
-      html += `<div class="section"><div class="sh" style="background:#6b7280">Sin datos de precio disponibles</div><table><thead><tr><th>Producto</th><th>Código</th><th>Cantidad</th></tr></thead><tbody>`
-      listaByProv['__sin_datos__'].items.forEach(it => {
-        html += `<tr><td>${it.producto}</td><td style="font-family:monospace">${it.codigo}</td><td>${it.cantidad} ${it.unidad_base}</td></tr>`
-      })
-      html += `</tbody></table></div>`
+    if (sinDatos.length > 0) {
+      html += `<div class="no-data">⚠ Sin datos de precio: ${sinDatos.map(i => i.producto).join(', ')}</div>`
     }
-    html += `<div class="grand">TOTAL ESTIMADO: ${fmt(listaTotal)}</div></body></html>`
 
-    const pw = window.open('', '_blank', 'width=840,height=700')
+    html += `</body></html>`
+    const pw = window.open('', '_blank', 'width=920,height=720')
     if (!pw) { alert('Permitir popups para exportar PDF'); return }
     pw.document.write(html); pw.document.close(); pw.focus()
     setTimeout(() => pw.print(), 400)
+  }
+
+  // ─── agregar toda una categoría a la lista ───────────────────────────────
+  const addCategoryToLista = cat => {
+    if (!cat) return
+    const candidatos = productos.filter(p =>
+      p.activo && p.categoria === cat && !listaItems.find(i => i.codigo === p.codigo)
+    )
+    if (candidatos.length === 0) return
+    setListaItems(prev => [...prev, ...candidatos.map(p => ({
+      codigo: p.codigo, producto: p.producto, categoria: p.categoria || '',
+      unidad_base: p.unidad_base || 'kg', cantidad: 1,
+    }))])
   }
 
   // ─── productos filtrados para agregar a lista ──────────────────────────────
   const productosParaLista = useMemo(() => {
     const q = listaSearch.toLowerCase()
     return productos
-      .filter(p => p.activo && (!q || p.producto.toLowerCase().includes(q) || (p.codigo || '').toLowerCase().includes(q)))
+      .filter(p => p.activo
+        && (!listaSearchCat || p.categoria === listaSearchCat)
+        && (!q || p.producto.toLowerCase().includes(q) || (p.codigo || '').toLowerCase().includes(q)))
       .filter(p => !listaItems.find(i => i.codigo === p.codigo))
       .slice(0, 80)
-  }, [productos, listaSearch, listaItems])
+  }, [productos, listaSearch, listaSearchCat, listaItems])
 
   // ─── stats resumen ─────────────────────────────────────────────────────────
   const totalProductos = entries.length
@@ -534,19 +667,43 @@ td{padding:5px 8px;border-bottom:1px solid #f0f0f0}
           <div style={{ display: 'flex', gap: '14px', alignItems: 'flex-start' }}>
 
             {/* Panel izquierdo: agregar productos */}
-            <div style={{ width: '256px', flexShrink: 0 }}>
+            <div style={{ width: '268px', flexShrink: 0 }}>
               <div className="card" style={{ position: 'sticky', top: '0' }}>
                 <div className="card-header" style={{ background: 'var(--surface-2)' }}>
                   <h3 style={{ fontSize: '13px' }}>Agregar productos</h3>
                 </div>
                 <div className="card-body" style={{ padding: '12px' }}>
-                  <input className="form-input" style={{ marginBottom: '8px', fontSize: '12px' }}
-                    placeholder="Buscar..." value={listaSearch} onChange={e => setListaSearch(e.target.value)} />
 
-                  <div style={{ maxHeight: '360px', overflowY: 'auto', margin: '0 -4px' }}>
+                  {/* Filtro por categoría con botón "Agregar todos" */}
+                  <div style={{ marginBottom: '8px', display: 'flex', gap: '5px', alignItems: 'center' }}>
+                    <select
+                      className="form-select"
+                      style={{ flex: 1, fontSize: '12px', padding: '5px 8px' }}
+                      value={listaSearchCat}
+                      onChange={e => setListaSearchCat(e.target.value)}
+                    >
+                      <option value="">Todas las categorías</option>
+                      {cats.map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                    {listaSearchCat && (
+                      <button
+                        className="btn btn-accent btn-sm"
+                        title={`Agregar todos los productos de "${listaSearchCat}"`}
+                        onClick={() => addCategoryToLista(listaSearchCat)}
+                        style={{ whiteSpace: 'nowrap', flexShrink: 0 }}
+                      >
+                        + Todo
+                      </button>
+                    )}
+                  </div>
+
+                  <input className="form-input" style={{ marginBottom: '8px', fontSize: '12px' }}
+                    placeholder="Buscar producto..." value={listaSearch} onChange={e => setListaSearch(e.target.value)} />
+
+                  <div style={{ maxHeight: '340px', overflowY: 'auto', margin: '0 -4px' }}>
                     {productosParaLista.length === 0 && (
                       <div className="text-muted" style={{ padding: '12px', textAlign: 'center', fontSize: '12px' }}>
-                        {listaSearch ? 'Sin resultados' : 'No quedan productos por agregar'}
+                        {listaSearch || listaSearchCat ? 'Sin resultados' : 'No quedan productos por agregar'}
                       </div>
                     )}
                     {productosParaLista.map(p => (
@@ -597,7 +754,7 @@ td{padding:5px 8px;border-bottom:1px solid #f0f0f0}
                           {exporting ? '⏳...' : '📊 Excel'}
                         </button>
                         <button className="btn btn-sm btn-secondary" onClick={handleExportListaPDF}>
-                          🖨 PDF
+                          🖨 PDF Auditoría
                         </button>
                       </div>
                     </div>
