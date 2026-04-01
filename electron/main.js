@@ -221,10 +221,24 @@ ipcMain.handle('productos:getAll', () => {
   return db.prepare('SELECT * FROM productos ORDER BY categoria, producto').all()
 })
 ipcMain.handle('productos:create', (_, p) => {
-  const stmt = db.prepare(`INSERT INTO productos (codigo,producto,categoria,marca,unidad_base,contenido_unitario,unidad_medida,presentacion_referencia,alias,codigos_maxirest,rubro_maxirest,activo)
-    VALUES (@codigo,@producto,@categoria,@marca,@unidad_base,@contenido_unitario,@unidad_medida,@presentacion_referencia,@alias,@codigos_maxirest,@rubro_maxirest,@activo)`)
-  const r = stmt.run(p)
-  return { id: r.lastInsertRowid, ...p }
+  try {
+    const stmt = db.prepare(`INSERT OR IGNORE INTO productos (codigo,producto,categoria,marca,unidad_base,contenido_unitario,unidad_medida,presentacion_referencia,alias,codigos_maxirest,rubro_maxirest,activo)
+      VALUES (@codigo,@producto,@categoria,@marca,@unidad_base,@contenido_unitario,@unidad_medida,@presentacion_referencia,@alias,@codigos_maxirest,@rubro_maxirest,@activo)`)
+    const r = stmt.run(p)
+    // Si fue ignorado (ya existía), devolvemos el registro existente sin error
+    if (r.changes === 0) {
+      const existing = db.prepare('SELECT * FROM productos WHERE codigo = ?').get(p.codigo)
+      return existing || { ...p }
+    }
+    return { id: r.lastInsertRowid, ...p }
+  } catch (err) {
+    // Si por alguna razón llegó un UNIQUE error igual, lo manejamos graciosamente
+    if (err.message && err.message.includes('UNIQUE')) {
+      const existing = db.prepare('SELECT * FROM productos WHERE codigo = ?').get(p.codigo)
+      return existing || { ...p }
+    }
+    throw err
+  }
 })
 ipcMain.handle('productos:update', (_, p) => {
   db.prepare(`UPDATE productos SET codigo=@codigo,producto=@producto,categoria=@categoria,marca=@marca,unidad_base=@unidad_base,
@@ -611,6 +625,285 @@ function createWindow(port) {
     console.error('[Load fail]', code, desc, url)
   })
 }
+
+// ─── Sincronización con OPS Terminal ─────────────────────────────────────────
+
+// Construye el paquete de sync desde la base de datos local
+function buildSyncPackage() {
+  const productos = db.prepare('SELECT * FROM productos WHERE activo=1 ORDER BY producto').all()
+  const proveedores = db.prepare('SELECT * FROM proveedores WHERE activo=1 ORDER BY proveedor').all()
+  const listas = db.prepare(`
+    SELECT l.*, p.codigo AS cod_producto
+    FROM listas l
+    LEFT JOIN productos p ON l.codigo_producto = p.codigo
+    WHERE l.estado_match='OK' AND l.activo=1
+  `).all()
+
+  return {
+    version: '1.0',
+    source: 'gestion-proveedores',
+    exportedAt: new Date().toISOString(),
+    productos: productos.map(p => ({
+      codigo: p.codigo,
+      nombre: p.producto,
+      rubro: p.categoria || 'General',
+      unidad: p.unidad_medida || p.unidad_base || 'unidad',
+      precioRef: null,
+    })),
+    proveedores: proveedores.map(p => ({
+      codigo: p.id_proveedor,
+      nombre: p.proveedor,
+      contacto: p.contacto || '',
+      telefono: p.whatsapp || '',
+      email: p.email || '',
+    })),
+    precios: listas.filter(l => l.cod_producto && l.id_proveedor && l.precio_informado > 0).map(l => ({
+      codigoProducto: l.cod_producto,
+      codigoProveedor: l.id_proveedor,
+      nombreProductoProveedor: l.producto_original || l.cod_producto,
+      precio: l.precio_informado,
+      unidad: l.unidad_medida || '',
+      fecha: l.fecha || null,
+    })),
+  }
+}
+
+// Exportar como JSON a disco (el usuario elige la ruta)
+ipcMain.handle('sync:exportJSON', async () => {
+  const fecha = new Date().toISOString().slice(0, 10)
+  const result = await dialog.showSaveDialog({
+    defaultPath: `gestion-proveedores-sync-${fecha}.json`,
+    filters: [{ name: 'JSON', extensions: ['json'] }],
+  })
+  if (result.canceled || !result.filePath) return { ok: false, canceled: true }
+
+  const payload = buildSyncPackage()
+  fs.writeFileSync(result.filePath, JSON.stringify(payload, null, 2), 'utf8')
+  return { ok: true, path: result.filePath, counts: {
+    productos: payload.productos.length,
+    proveedores: payload.proveedores.length,
+    precios: payload.precios.length,
+  }}
+})
+
+// Función compartida que importa un paquete de sync ya parseado
+function importSyncData(data) {
+  if (!data.version || (!data.productos && !data.proveedores)) {
+    return { ok: false, error: 'No es un paquete de sincronización válido.' }
+  }
+
+  let productosInsertados = 0, productosActualizados = 0
+  let proveedoresInsertados = 0, proveedoresActualizados = 0
+  let preciosUpserted = 0
+  const errores = []
+
+  const insertProd = db.prepare(`INSERT OR IGNORE INTO productos
+    (codigo,producto,categoria,unidad_base,unidad_medida,activo)
+    VALUES (@codigo,@producto,@categoria,@unidad_base,@unidad_medida,1)`)
+  const updateProd = db.prepare(`UPDATE productos SET
+    producto=@producto, categoria=@categoria, unidad_medida=@unidad_medida
+    WHERE codigo=@codigo`)
+  const insertProv = db.prepare(`INSERT OR IGNORE INTO proveedores
+    (id_proveedor,proveedor,contacto,whatsapp,email,activo)
+    VALUES (@id_proveedor,@proveedor,@contacto,@whatsapp,@email,1)`)
+  const updateProv = db.prepare(`UPDATE proveedores SET
+    proveedor=@proveedor, contacto=@contacto, whatsapp=@whatsapp, email=@email
+    WHERE id_proveedor=@id_proveedor`)
+  const checkLista = db.prepare('SELECT id FROM listas WHERE id_proveedor=? AND codigo_producto=? AND activo=1 LIMIT 1')
+  const insertLista = db.prepare(`INSERT INTO listas
+    (fecha,id_proveedor,proveedor,producto_original,unidad_medida,precio_informado,codigo_producto,estado_match,precio_por_unidad,precio_por_medida_base,activo)
+    VALUES (@fecha,@id_proveedor,@proveedor,@producto_original,@unidad_medida,@precio_informado,@codigo_producto,'OK',@precio_informado,@precio_informado,1)`)
+  const updateLista = db.prepare(`UPDATE listas SET
+    precio_informado=@precio_informado, precio_por_unidad=@precio_informado,
+    precio_por_medida_base=@precio_informado, fecha=@fecha
+    WHERE id_proveedor=@id_proveedor AND codigo_producto=@codigo_producto AND activo=1`)
+
+  const tx = db.transaction(() => {
+    for (const p of (data.productos || [])) {
+      if (!p.codigo || !p.nombre) continue
+      try {
+        const r = insertProd.run({ codigo: p.codigo, producto: p.nombre, categoria: p.rubro || 'General', unidad_base: p.unidad || 'unidad', unidad_medida: p.unidad || 'unidad' })
+        if (r.changes) productosInsertados++
+        else { updateProd.run({ codigo: p.codigo, producto: p.nombre, categoria: p.rubro || 'General', unidad_medida: p.unidad || 'unidad' }); productosActualizados++ }
+      } catch (e) { errores.push(`Producto ${p.codigo}: ${e.message}`) }
+    }
+    for (const p of (data.proveedores || [])) {
+      if (!p.codigo || !p.nombre) continue
+      try {
+        const r = insertProv.run({ id_proveedor: p.codigo, proveedor: p.nombre, contacto: p.contacto || null, whatsapp: p.telefono || null, email: p.email || null })
+        if (r.changes) proveedoresInsertados++
+        else { updateProv.run({ id_proveedor: p.codigo, proveedor: p.nombre, contacto: p.contacto || null, whatsapp: p.telefono || null, email: p.email || null }); proveedoresActualizados++ }
+      } catch (e) { errores.push(`Proveedor ${p.codigo}: ${e.message}`) }
+    }
+    for (const pr of (data.precios || [])) {
+      if (!pr.codigoProducto || !pr.codigoProveedor || !pr.precio) continue
+      try {
+        const prod = db.prepare('SELECT codigo FROM productos WHERE codigo=?').get(pr.codigoProducto)
+        const prov = db.prepare('SELECT proveedor FROM proveedores WHERE id_proveedor=?').get(pr.codigoProveedor)
+        if (!prod || !prov) continue
+        const existing = checkLista.get(pr.codigoProveedor, pr.codigoProducto)
+        const fecha = pr.fecha || new Date().toISOString().slice(0, 10)
+        if (existing) {
+          updateLista.run({ precio_informado: pr.precio, fecha, id_proveedor: pr.codigoProveedor, codigo_producto: pr.codigoProducto })
+        } else {
+          insertLista.run({ fecha, id_proveedor: pr.codigoProveedor, proveedor: prov.proveedor, producto_original: pr.nombreProductoProveedor || pr.codigoProducto, unidad_medida: pr.unidad || '', precio_informado: pr.precio, codigo_producto: pr.codigoProducto })
+        }
+        preciosUpserted++
+      } catch (e) { errores.push(`Precio ${pr.codigoProducto}: ${e.message}`) }
+    }
+  })
+
+  tx()
+  return { ok: true, source: data.source || 'desconocido', productosInsertados, productosActualizados, proveedoresInsertados, proveedoresActualizados, preciosUpserted, errores }
+}
+
+// Importar desde un JSON (el usuario elige el archivo)
+ipcMain.handle('sync:importJSON', async () => {
+  const result = await dialog.showOpenDialog({
+    properties: ['openFile'],
+    filters: [{ name: 'JSON', extensions: ['json'] }],
+  })
+  if (result.canceled || !result.filePaths.length) return { ok: false, canceled: true }
+
+  try {
+    const raw = fs.readFileSync(result.filePaths[0], 'utf8')
+    const data = JSON.parse(raw)
+    return importSyncData(data)
+  } catch (e) {
+    return { ok: false, error: 'Error al leer el archivo: ' + e.message }
+  }
+})
+
+// Push: envía los datos de GP hacia OPS Terminal vía HTTP
+ipcMain.handle('sync:pushToOPS', async (_, opsUrl) => {
+  const https = require('https')
+  const payload = JSON.stringify(buildSyncPackage())
+
+  return new Promise((resolve) => {
+    try {
+      const url = new URL('/api/sync/import', opsUrl)
+      const isHttps = url.protocol === 'https:'
+      const lib = isHttps ? https : http
+      const options = {
+        hostname: url.hostname,
+        port: url.port || (isHttps ? 443 : 80),
+        path: url.pathname,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) },
+        timeout: 10000,
+      }
+      const req = lib.request(options, (res) => {
+        let data = ''
+        res.on('data', chunk => { data += chunk })
+        res.on('end', () => {
+          try { resolve({ ok: res.statusCode >= 200 && res.statusCode < 300, result: JSON.parse(data) })
+          } catch { resolve({ ok: false, error: 'Respuesta inválida del servidor' }) }
+        })
+      })
+      req.on('error', (e) => resolve({ ok: false, error: e.message }))
+      req.on('timeout', () => { req.destroy(); resolve({ ok: false, error: 'Timeout — ¿está OPS Terminal corriendo?' }) })
+      req.write(payload)
+      req.end()
+    } catch (e) {
+      resolve({ ok: false, error: e.message })
+    }
+  })
+})
+
+// Pull: descarga el catálogo de OPS Terminal e importa en GP
+ipcMain.handle('sync:pullFromOPS', async (_, opsUrl) => {
+  const https = require('https')
+
+  return new Promise((resolve) => {
+    try {
+      const url = new URL('/api/sync/export', opsUrl)
+      const isHttps = url.protocol === 'https:'
+      const lib = isHttps ? https : http
+      const options = {
+        hostname: url.hostname,
+        port: url.port || (isHttps ? 443 : 80),
+        path: url.pathname,
+        method: 'GET',
+        timeout: 10000,
+      }
+      const req = lib.request(options, (res) => {
+        let data = ''
+        res.on('data', chunk => { data += chunk })
+        res.on('end', () => {
+          try {
+            const parsed = JSON.parse(data)
+            const importResult = importSyncData(parsed)
+            resolve(importResult)
+          } catch (e) { resolve({ ok: false, error: 'Error al parsear respuesta: ' + e.message }) }
+        })
+      })
+      req.on('error', (e) => resolve({ ok: false, error: e.message }))
+      req.on('timeout', () => { req.destroy(); resolve({ ok: false, error: 'Timeout — ¿está OPS Terminal corriendo?' }) })
+      req.end()
+    } catch (e) {
+      resolve({ ok: false, error: e.message })
+    }
+  })
+})
+
+// ─── Backup / Restore ─────────────────────────────────────────────────────────
+ipcMain.handle('backup:export', async () => {
+  const userDataPath = app.getPath('userData')
+  const dbPath = path.join(userDataPath, 'gestion_proveedores.db')
+  const now = new Date()
+  const stamp = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}_${String(now.getHours()).padStart(2,'0')}${String(now.getMinutes()).padStart(2,'0')}`
+  const result = await dialog.showSaveDialog({
+    title: 'Exportar backup de base de datos',
+    defaultPath: `backup_gestion_proveedores_${stamp}.db`,
+    filters: [{ name: 'Base de datos SQLite', extensions: ['db'] }],
+  })
+  if (result.canceled || !result.filePath) return { ok: false, canceled: true }
+  try {
+    // Usar backup API de better-sqlite3 para copia en caliente (sin cerrar la DB)
+    await db.backup(result.filePath)
+    return { ok: true, path: result.filePath }
+  } catch (err) {
+    // Fallback: copia de archivo directa
+    try {
+      fs.copyFileSync(dbPath, result.filePath)
+      return { ok: true, path: result.filePath }
+    } catch (e) {
+      return { ok: false, error: e.message }
+    }
+  }
+})
+
+ipcMain.handle('backup:restore', async () => {
+  const result = await dialog.showOpenDialog({
+    title: 'Restaurar backup de base de datos',
+    properties: ['openFile'],
+    filters: [{ name: 'Base de datos SQLite', extensions: ['db'] }],
+  })
+  if (result.canceled || !result.filePaths.length) return { ok: false, canceled: true }
+  const backupPath = result.filePaths[0]
+  const userDataPath = app.getPath('userData')
+  const dbPath = path.join(userDataPath, 'gestion_proveedores.db')
+  const tempPath = dbPath + '.bak_' + Date.now()
+  try {
+    // Guardar copia de seguridad del actual antes de restaurar
+    fs.copyFileSync(dbPath, tempPath)
+    // Cerrar la DB, restaurar, reabrir
+    db.close()
+    fs.copyFileSync(backupPath, dbPath)
+    // Reinicializar la conexión a la DB
+    initDB()
+    // Borrar el temp si todo salió bien
+    try { fs.unlinkSync(tempPath) } catch {}
+    return { ok: true }
+  } catch (err) {
+    // Revertir si algo falló
+    try {
+      if (fs.existsSync(tempPath)) fs.copyFileSync(tempPath, dbPath)
+      if (db.open === false) initDB()
+    } catch {}
+    return { ok: false, error: err.message }
+  }
+})
 
 app.whenReady().then(async () => {
   initDB()

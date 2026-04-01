@@ -157,10 +157,18 @@ export default function Equivalencias() {
   // Guarda un lote de resultados aprobados y devuelve cuántos se resolvieron
   const saveResults = async (toApply) => {
     const fresh = await api.productos.getAll()
+    // Inicializar contadores desde el máximo existente por prefijo
+    // para evitar colisión de códigos en corridas repetidas
     const countByPrefix = {}
     for (const p of fresh) {
-      const prefix = p.codigo.replace(/\d+$/, '')
-      countByPrefix[prefix] = (countByPrefix[prefix] || 0) + 1
+      const match = p.codigo.match(/^([A-Z]+)(\d+)$/)
+      if (match) {
+        const prefix = match[1]
+        const num = parseInt(match[2], 10)
+        if (!countByPrefix[prefix] || num > countByPrefix[prefix]) {
+          countByPrefix[prefix] = num
+        }
+      }
     }
     let resueltos = 0
     for (const item of toApply) {
@@ -178,23 +186,34 @@ export default function Equivalencias() {
         const cat    = item.categoria || 'Otros'
         const prefix = PREFIXES[cat] || cat.slice(0,3).toUpperCase()
         countByPrefix[prefix] = (countByPrefix[prefix] || 0) + 1
-        const codigo = `${prefix}${String(countByPrefix[prefix]).padStart(3,'0')}`
-        await api.productos.create({
-          codigo, producto: item.nombre_sugerido, categoria: cat,
-          marca: '', unidad_base: item.unidad || 'kg',
-          contenido_unitario: null, unidad_medida: null,
-          presentacion_referencia: '', alias: '',
-          codigos_maxirest: null, rubro_maxirest: '', activo: 1,
-        })
-        await api.listas.updateMatch({ id: item.id, codigo_producto: codigo, estado_match: 'OK' })
-        await api.equivalencias.create({
-          id_proveedor: item.id_proveedor,
-          producto_original: item.producto_original,
-          presentacion_original: item.presentacion_original,
-          codigo_producto: codigo,
-          comentarios: 'Producto creado automáticamente por IA',
-        })
-        resueltos++
+        let codigo = `${prefix}${String(countByPrefix[prefix]).padStart(3,'0')}`
+        // Si el código ya existe (carrera entre pasadas), incrementar hasta encontrar uno libre
+        const allCodigos = new Set((await api.productos.getAll()).map(p => p.codigo))
+        while (allCodigos.has(codigo)) {
+          countByPrefix[prefix] = (countByPrefix[prefix] || 0) + 1
+          codigo = `${prefix}${String(countByPrefix[prefix]).padStart(3,'0')}`
+        }
+        try {
+          await api.productos.create({
+            codigo, producto: item.nombre_sugerido, categoria: cat,
+            marca: '', unidad_base: item.unidad || 'kg',
+            contenido_unitario: null, unidad_medida: null,
+            presentacion_referencia: '', alias: '',
+            codigos_maxirest: null, rubro_maxirest: '', activo: 1,
+          })
+          await api.listas.updateMatch({ id: item.id, codigo_producto: codigo, estado_match: 'OK' })
+          await api.equivalencias.create({
+            id_proveedor: item.id_proveedor,
+            producto_original: item.producto_original,
+            presentacion_original: item.presentacion_original,
+            codigo_producto: codigo,
+            comentarios: 'Producto creado automáticamente por IA',
+          })
+          resueltos++
+        } catch (createErr) {
+          // Si falla la creación del producto, registrar y continuar con el siguiente
+          console.warn(`[Equivalencias] No se pudo crear producto ${codigo}:`, createErr.message)
+        }
       }
     }
     return resueltos

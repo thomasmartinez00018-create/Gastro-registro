@@ -59,7 +59,7 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "Gestión Proveedores",
-      "licenseFile": "build/license.txt",
+      "license": "build/license.txt",
       "installerLanguages": ["es_AR"],
       "language": "3082"
     },

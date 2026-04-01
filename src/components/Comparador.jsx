@@ -48,15 +48,18 @@ export default function Comparador() {
   const [cats,        setCats]        = useState([])
 
   // ── filtros comparador ──────────────────────────────────────────────────────
-  const [catFilter,  setCatFilter]  = useState('')
-  const [search,     setSearch]     = useState('')
-  const [desde,      setDesde]      = useState(defaultDesde())
-  const [hasta,      setHasta]      = useState(todayStr())
-  const [viewMode,   setViewMode]   = useState('ultima')   // 'ultima' | 'evolucion' | 'lista'
-  const [expandedEvo,setExpandedEvo]= useState({})
-  const [conImpuestos,setConImpuestos]=useState(false)
-  const [loading,    setLoading]    = useState(false)
-  const [exporting,  setExporting]  = useState(false)
+  const [catFilter,    setCatFilter]    = useState('')
+  const [search,       setSearch]       = useState('')
+  const [multiSearch,  setMultiSearch]  = useState('')
+  const [useMultiSearch, setUseMultiSearch] = useState(false)
+  const [filterDiff,   setFilterDiff]   = useState(false)
+  const [desde,        setDesde]        = useState(defaultDesde())
+  const [hasta,        setHasta]        = useState(todayStr())
+  const [viewMode,     setViewMode]     = useState('ultima')   // 'ultima' | 'evolucion' | 'lista'
+  const [expandedEvo,  setExpandedEvo]  = useState({})
+  const [conImpuestos, setConImpuestos] = useState(false)
+  const [loading,      setLoading]      = useState(false)
+  const [exporting,    setExporting]    = useState(false)
 
   // ── selección para exportar (modo comparador) ──────────────────────────────
   const [selectedProds, setSelectedProds] = useState(new Set())
@@ -114,14 +117,28 @@ export default function Comparador() {
     return g
   }, [dataInRange])
 
+  const multiTerms = useMemo(() =>
+    multiSearch.split('\n').map(t => t.trim().toLowerCase()).filter(Boolean)
+  , [multiSearch])
+
   const entries = useMemo(() =>
     Object.entries(grouped).filter(([cod, g]) => {
       const mC = !catFilter || g.categoria === catFilter
-      const q  = search.toLowerCase()
-      const mS = !q || g.producto?.toLowerCase().includes(q) || cod.toLowerCase().includes(q)
-      return mC && mS
+      let mS = true
+      if (useMultiSearch && multiTerms.length > 0) {
+        mS = multiTerms.some(t => g.producto?.toLowerCase().includes(t) || cod.toLowerCase().includes(t))
+      } else {
+        const q = search.toLowerCase()
+        mS = !q || g.producto?.toLowerCase().includes(q) || cod.toLowerCase().includes(q)
+      }
+      let mD = true
+      if (filterDiff) {
+        const ps = getUltimaRows(g.rows).map(r => adjustedPxm(r)).filter(p => p != null && p > 0)
+        mD = ps.length > 1 && Math.max(...ps) > Math.min(...ps)
+      }
+      return mC && mS && mD
     })
-  , [grouped, catFilter, search])
+  , [grouped, catFilter, search, useMultiSearch, multiTerms, filterDiff]) // eslint-disable-line
 
   const getUltimaRows = rows => {
     const byProv = {}
@@ -402,7 +419,20 @@ td{padding:5px 8px;border-bottom:1px solid #f0f0f0}
         {viewMode !== 'lista' && (
           <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)', marginBottom: '16px' }}>
             <div className="stat-card"><div className="stat-number">{totalProductos}</div><div className="stat-label">Productos comparados</div></div>
-            <div className="stat-card"><div className="stat-number" style={{ color: 'var(--warning)' }}>{conAhorro}</div><div className="stat-label">Con diferencia de precio</div></div>
+            <div
+              className="stat-card"
+              onClick={() => setFilterDiff(v => !v)}
+              title={filterDiff ? 'Mostrar todos los productos' : 'Filtrar solo productos con diferencia de precio'}
+              style={{ cursor: 'pointer', outline: filterDiff ? '2px solid var(--warning)' : 'none', outlineOffset: '2px', transition: 'outline .15s' }}
+            >
+              <div className="stat-number" style={{ color: 'var(--warning)' }}>{conAhorro}</div>
+              <div className="stat-label" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                Con diferencia de precio
+                {filterDiff
+                  ? <span style={{ fontSize: '10px', background: 'var(--warning)', color: '#000', borderRadius: '4px', padding: '1px 5px', fontWeight: 700 }}>ACTIVO</span>
+                  : <span style={{ fontSize: '10px', color: 'var(--text-light)' }}>▶ clic para filtrar</span>}
+              </div>
+            </div>
             <div className="stat-card"><div className="stat-number">{dataInRange.length}</div><div className="stat-label">Registros de precios</div></div>
           </div>
         )}
@@ -426,8 +456,49 @@ td{padding:5px 8px;border-bottom:1px solid #f0f0f0}
 
             {viewMode !== 'lista' && (
               <>
-                <div className="search-bar" style={{ flex: 1, minWidth: '160px' }}>
-                  <input className="form-input" placeholder="Buscar producto o código..." value={search} onChange={e => setSearch(e.target.value)} />
+                {/* Buscador: modo simple o multi-lista */}
+                <div style={{ flex: 1, minWidth: '200px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <div style={{ display: 'flex', gap: '4px', alignItems: 'flex-start' }}>
+                    {!useMultiSearch ? (
+                      <div className="search-bar" style={{ flex: 1 }}>
+                        <input
+                          className="form-input"
+                          placeholder="Buscar producto o código..."
+                          value={search}
+                          onChange={e => setSearch(e.target.value)}
+                        />
+                      </div>
+                    ) : (
+                      <div style={{ flex: 1, position: 'relative' }}>
+                        <textarea
+                          className="form-input"
+                          rows={3}
+                          placeholder={"Pegá una lista (uno por línea):\nMorrón\nArveja\nCebolla..."}
+                          value={multiSearch}
+                          onChange={e => setMultiSearch(e.target.value)}
+                          style={{ resize: 'vertical', fontSize: '12px', lineHeight: '1.5', fontFamily: 'inherit', minHeight: '64px' }}
+                        />
+                        {multiTerms.length > 0 && (
+                          <span style={{ position: 'absolute', top: '4px', right: '6px', fontSize: '10px', background: 'var(--primary)', color: '#000', borderRadius: '4px', padding: '1px 5px', fontWeight: 700 }}>
+                            {multiTerms.length} términos
+                          </span>
+                        )}
+                      </div>
+                    )}
+                    <button
+                      className={`btn btn-sm ${useMultiSearch ? 'btn-accent' : 'btn-secondary'}`}
+                      title={useMultiSearch ? 'Volver a búsqueda simple' : 'Buscar varios productos a la vez'}
+                      onClick={() => { setUseMultiSearch(v => !v); setSearch(''); setMultiSearch('') }}
+                      style={{ whiteSpace: 'nowrap', flexShrink: 0 }}
+                    >
+                      {useMultiSearch ? '✕ Lista' : '☰ Lista'}
+                    </button>
+                  </div>
+                  {useMultiSearch && (
+                    <div style={{ fontSize: '10.5px', color: 'var(--text-muted)' }}>
+                      Modo lista — un producto por línea. Busca coincidencia parcial.
+                    </div>
+                  )}
                 </div>
                 <select className="form-select" style={{ width: '160px' }} value={catFilter} onChange={e => setCatFilter(e.target.value)}>
                   <option value="">Todas las categorías</option>
@@ -730,7 +801,7 @@ td{padding:5px 8px;border-bottom:1px solid #f0f0f0}
                             const mult    = conImpuestos ? multProv(r.id_proveedor) : 1
                             const provData = provMap[r.id_proveedor]
                             return (
-                              <tr key={i} style={isBest ? { background: '#f0fdf4' } : {}}>
+                              <tr key={i} style={isBest ? { background: 'rgba(252,197,112,0.07)', borderLeft: '3px solid var(--primary)' } : { borderLeft: '3px solid transparent' }}>
                                 <td style={{ fontWeight: 600 }}>
                                   {isBest && <span style={{ marginRight: '4px' }}>⭐</span>}
                                   {r.proveedor || r.id_proveedor}

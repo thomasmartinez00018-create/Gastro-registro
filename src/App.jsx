@@ -10,6 +10,8 @@ import Configuracion, { loadAppSettings, applyTheme } from './components/Configu
 import SimuladorFactura from './components/SimuladorFactura'
 import ActivacionScreen from './components/ActivacionScreen'
 import GeneradorLicencias from './components/GeneradorLicencias'
+import Vincular from './components/Vincular'
+import ErrorBoundary from './components/ErrorBoundary'
 
 const IS_DEV = import.meta.env.DEV
 
@@ -42,6 +44,12 @@ const SECTIONS = [
       { id: 'simulador',     label: 'Pedidos',           icon: 'receipt_long'   },
     ]
   },
+  {
+    title: 'Integración',
+    items: [
+      { id: 'vincular',      label: 'Vincular OPS',      icon: 'link'           },
+    ]
+  },
   ...( IS_DEV ? [{
     title: 'Desarrollador',
     items: [{ id: 'licencias', label: 'Generar Licencias', icon: 'key' }],
@@ -58,6 +66,7 @@ const PAGES = {
   comparador:    Comparador,
   simulador:     SimuladorFactura,
   licencias:     GeneradorLicencias,
+  vincular:      Vincular,
 }
 
 function AppInner() {
@@ -173,28 +182,11 @@ function AppInner() {
       {/* ── Content Shell ────────────────────────────────────────────────── */}
       <div className="content-shell">
 
-        {/* Top Bar */}
-        <header className="top-bar">
-          <div className="top-bar-search">
-            <span className="material-symbols-outlined">search</span>
-            <input type="text" placeholder="Buscar productos o proveedores…" />
-          </div>
-          <div className="top-bar-actions">
-            <button className="top-bar-sync-btn">
-              <span className="material-symbols-outlined">sync</span>
-              Sync Local DB
-            </button>
-            <span className="material-symbols-outlined top-bar-icon">notifications</span>
-            <span className="material-symbols-outlined top-bar-icon">cloud_done</span>
-            <div className="top-bar-avatar">
-              <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>person</span>
-            </div>
-          </div>
-        </header>
-
         {/* Contenido de la página */}
         <main className="main-content">
-          <Page onNavigate={setPage} />
+          <ErrorBoundary key={page}>
+            <Page onNavigate={setPage} />
+          </ErrorBoundary>
         </main>
 
       </div>

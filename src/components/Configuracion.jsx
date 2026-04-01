@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import api from '../api'
 
 // ─── Temas ────────────────────────────────────────────────────────────────────
 export const THEMES = {
@@ -106,6 +107,8 @@ export default function Configuracion() {
   const [logoBase64, setLogoBase64]         = useState('')
   const [theme, setTheme]                   = useState('gastronomica')
   const [settingsSaved, setSettingsSaved]   = useState(false)
+  const [backupStatus, setBackupStatus]     = useState(null)  // { type: 'ok'|'error', msg }
+  const [backupLoading, setBackupLoading]   = useState(false)
   const logoInputRef = useRef(null)
 
   useEffect(() => {
@@ -127,6 +130,40 @@ export default function Configuracion() {
   const handleThemePreview = (key) => {
     setTheme(key)
     applyTheme(key)
+  }
+
+  const handleBackupExport = async () => {
+    if (!window.api) { setBackupStatus({ type: 'error', msg: 'Solo disponible en la app de escritorio' }); return }
+    setBackupLoading(true); setBackupStatus(null)
+    try {
+      const r = await api.backup.export()
+      if (r.canceled) { setBackupLoading(false); return }
+      if (r.ok) setBackupStatus({ type: 'ok', msg: `✅ Backup guardado correctamente` })
+      else setBackupStatus({ type: 'error', msg: `Error: ${r.error}` })
+    } catch (e) {
+      setBackupStatus({ type: 'error', msg: `Error: ${e.message}` })
+    } finally { setBackupLoading(false) }
+  }
+
+  const handleBackupRestore = async () => {
+    if (!window.api) { setBackupStatus({ type: 'error', msg: 'Solo disponible en la app de escritorio' }); return }
+    const ok = window.confirm(
+      '⚠️ Restaurar un backup reemplazará TODOS los datos actuales.\n\n' +
+      'Esta acción no se puede deshacer. ¿Querés continuar?'
+    )
+    if (!ok) return
+    setBackupLoading(true); setBackupStatus(null)
+    try {
+      const r = await api.backup.restore()
+      if (r.canceled) { setBackupLoading(false); return }
+      if (r.ok) {
+        setBackupStatus({ type: 'ok', msg: '✅ Base de datos restaurada. Reiniciá la app para ver los cambios.' })
+      } else {
+        setBackupStatus({ type: 'error', msg: `Error al restaurar: ${r.error}` })
+      }
+    } catch (e) {
+      setBackupStatus({ type: 'error', msg: `Error: ${e.message}` })
+    } finally { setBackupLoading(false) }
   }
 
   const handleSaveSettings = () => {
@@ -289,6 +326,77 @@ export default function Configuracion() {
           </div>
         </div>
 
+        {/* ── Card: Backup / Restore ────────────────────────────────────────── */}
+        <div className="card" style={{ marginBottom: '20px' }}>
+          <div className="card-header">
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <span className="material-symbols-outlined" style={{ color: 'var(--primary)' }}>backup</span>
+              <div>
+                <h3>Backup de datos</h3>
+                <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                  Exportar o restaurar la base de datos local
+                </div>
+              </div>
+            </div>
+          </div>
+          <div className="card-body">
+            <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '16px', lineHeight: 1.6 }}>
+              Se recomienda hacer un backup antes de cada actualización o cambio importante.
+              El archivo <code style={{ fontSize: '11px', background: 'var(--surface-3)', padding: '1px 5px', borderRadius: '4px' }}>.db</code> contiene
+              todos tus productos, proveedores y listas de precios.
+            </p>
+
+            <div style={{ display: 'flex', gap: '10px', marginBottom: '14px', flexWrap: 'wrap' }}>
+              <button
+                className="btn btn-secondary"
+                onClick={handleBackupExport}
+                disabled={backupLoading}
+                style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+              >
+                <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>download</span>
+                {backupLoading ? 'Procesando...' : 'Exportar backup'}
+              </button>
+              <button
+                className="btn btn-ghost"
+                onClick={handleBackupRestore}
+                disabled={backupLoading}
+                style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--warning)' }}
+              >
+                <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>restore</span>
+                Restaurar desde backup
+              </button>
+            </div>
+
+            {backupStatus && (
+              <div style={{
+                padding: '10px 14px',
+                borderRadius: '8px',
+                fontSize: '12.5px',
+                background: backupStatus.type === 'ok' ? 'rgba(110,231,183,0.08)' : 'rgba(255,180,171,0.08)',
+                border: `1px solid ${backupStatus.type === 'ok' ? 'rgba(110,231,183,0.2)' : 'rgba(255,180,171,0.2)'}`,
+                color: backupStatus.type === 'ok' ? 'var(--success)' : 'var(--danger)',
+              }}>
+                {backupStatus.msg}
+              </div>
+            )}
+
+            <div style={{
+              background: 'var(--surface-2)',
+              borderRadius: '8px',
+              padding: '10px 14px',
+              fontSize: '12px',
+              color: 'var(--text-muted)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              marginTop: '14px',
+            }}>
+              <span className="material-symbols-outlined" style={{ fontSize: '16px', color: 'var(--info)' }}>info</span>
+              <span><strong style={{ color: 'var(--text)' }}>Ubicación:</strong> AppData\Roaming\Gestión Proveedores (Windows)</span>
+            </div>
+          </div>
+        </div>
+
         {/* ── Card: Datos locales ───────────────────────────────────────────── */}
         <div className="card">
           <div className="card-header">
@@ -307,19 +415,6 @@ export default function Configuracion() {
               Todos los datos del sistema — productos, proveedores y listas de precios — se guardan
               exclusivamente en este dispositivo. No se envía información a ningún servidor externo.
             </p>
-            <div style={{
-              background: 'var(--surface-2)',
-              borderRadius: '8px',
-              padding: '10px 14px',
-              fontSize: '12px',
-              color: 'var(--text-muted)',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-            }}>
-              <span className="material-symbols-outlined" style={{ fontSize: '16px', color: 'var(--info)' }}>info</span>
-              <span><strong style={{ color: 'var(--text)' }}>Ubicación:</strong> carpeta de datos de la aplicación (AppData en Windows)</span>
-            </div>
           </div>
         </div>
 

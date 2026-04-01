@@ -57,4 +57,16 @@ contextBridge.exposeInMainWorld('api', {
     importarInsumos: (items) => ipcRenderer.invoke('maxirest:importarInsumos', items),
     exportarComparativa: (data) => ipcRenderer.invoke('maxirest:exportarComparativa', data),
   },
+  // Sync / Vincular con OPS Terminal
+  sync: {
+    exportJSON: () => ipcRenderer.invoke('sync:exportJSON'),
+    importJSON: () => ipcRenderer.invoke('sync:importJSON'),
+    pushToOPS: (url) => ipcRenderer.invoke('sync:pushToOPS', url),
+    pullFromOPS: (url) => ipcRenderer.invoke('sync:pullFromOPS', url),
+  },
+  // Backup / Restore
+  backup: {
+    export:  () => ipcRenderer.invoke('backup:export'),
+    restore: () => ipcRenderer.invoke('backup:restore'),
+  },
 })

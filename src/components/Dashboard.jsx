@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import api from '../api'
 
 const ACCIONES = [
@@ -33,23 +33,63 @@ function StatCard({ icon, label, value, accent, warn }) {
   )
 }
 
+// Detecta productos con subida de precio > umbral% vs su registro anterior
+function detectAlertasPrecios(listas, umbralPct = 10) {
+  // Agrupar por producto + proveedor, ordenar por fecha desc
+  const grupos = {}
+  listas.forEach(l => {
+    if (!l.codigo_producto || l.estado_match !== 'OK' || !l.precio_por_medida_base) return
+    const key = `${l.codigo_producto}__${l.id_proveedor}`
+    if (!grupos[key]) grupos[key] = []
+    grupos[key].push(l)
+  })
+  const alertas = []
+  Object.values(grupos).forEach(rows => {
+    rows.sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''))
+    if (rows.length < 2) return
+    const actual   = rows[0].precio_por_medida_base
+    const anterior = rows[1].precio_por_medida_base
+    if (!actual || !anterior || anterior === 0) return
+    const variacion = ((actual - anterior) / anterior) * 100
+    if (variacion > umbralPct) {
+      alertas.push({
+        codigo:    rows[0].codigo_producto,
+        producto:  rows[0].producto_original || rows[0].codigo_producto,
+        proveedor: rows[0].proveedor || rows[0].id_proveedor,
+        actual,
+        anterior,
+        variacion,
+        fecha: rows[0].fecha,
+      })
+    }
+  })
+  // Ordenar por variación descendente, tomar top 5
+  return alertas.sort((a, b) => b.variacion - a.variacion).slice(0, 5)
+}
+
 export default function Dashboard({ onNavigate }) {
-  const [stats, setStats] = useState({ productos: 0, proveedores: 0, listas: 0, pendientes: 0 })
+  const [stats,  setStats]  = useState({ productos: 0, proveedores: 0, listas: 0, pendientes: 0 })
+  const [listas, setListas] = useState([])
 
   useEffect(() => {
     Promise.all([
       api.productos.getAll(),
       api.proveedores.getAll(),
       api.listas.getAll(),
-    ]).then(([productos, proveedores, listas]) => {
+    ]).then(([productos, proveedores, listasData]) => {
       setStats({
         productos:   productos.filter(p => p.activo).length,
         proveedores: proveedores.filter(p => p.activo).length,
-        listas:      listas.length,
-        pendientes:  listas.filter(l => l.estado_match === 'PENDIENTE').length,
+        listas:      listasData.length,
+        pendientes:  listasData.filter(l => l.estado_match === 'PENDIENTE').length,
       })
+      setListas(listasData)
     })
   }, [])
+
+  const alertasPrecios = useMemo(() => detectAlertasPrecios(listas, 10), [listas])
+  const fmtPct = v => `+${v.toFixed(1)}%`
+  const fmtARS = n => n != null ? `$${Number(n).toLocaleString('es-AR', { maximumFractionDigits: 0 })}` : '—'
 
   return (
     <>
@@ -204,6 +244,76 @@ export default function Dashboard({ onNavigate }) {
           </div>
 
         </div>
+
+        {/* ── Alertas de Precio ─────────────────────────────────────────── */}
+        {alertasPrecios.length > 0 && (
+          <div className="bento-card bento-span-12" style={{ marginBottom: '0', borderLeft: '3px solid var(--danger)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <span className="material-symbols-outlined" style={{ color: 'var(--danger)', fontSize: '22px' }}>trending_up</span>
+                <div>
+                  <h3 style={{ fontFamily: 'Manrope, sans-serif', fontSize: '16px', fontWeight: 700 }}>Alertas de Precio</h3>
+                  <p style={{ fontSize: '11.5px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                    Productos con aumento {'>'} 10% respecto a la importación anterior
+                  </p>
+                </div>
+              </div>
+              <span style={{
+                background: 'rgba(255,180,171,0.12)', color: 'var(--danger)',
+                border: '1px solid rgba(255,180,171,0.2)',
+                borderRadius: '99px', padding: '3px 10px',
+                fontSize: '11px', fontWeight: 700,
+              }}>
+                {alertasPrecios.length} alerta{alertasPrecios.length !== 1 ? 's' : ''}
+              </span>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '10px' }}>
+              {alertasPrecios.map((a, i) => (
+                <div key={i} style={{
+                  background: 'var(--surface-2)', border: '1px solid rgba(255,180,171,0.15)',
+                  borderRadius: '10px', padding: '12px 14px',
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontWeight: 600, fontSize: '13px', color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {a.producto}
+                    </div>
+                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                      {a.proveedor}
+                    </div>
+                    <div style={{ fontSize: '10.5px', color: 'var(--text-light)', marginTop: '2px' }}>
+                      {fmtARS(a.anterior)} → {fmtARS(a.actual)}/unidad
+                    </div>
+                  </div>
+                  <div style={{
+                    flexShrink: 0, marginLeft: '10px',
+                    background: 'rgba(255,180,171,0.12)', color: 'var(--danger)',
+                    borderRadius: '8px', padding: '6px 10px',
+                    fontWeight: 800, fontSize: '14px', textAlign: 'center',
+                  }}>
+                    {fmtPct(a.variacion)}
+                  </div>
+                </div>
+              ))}
+              <button
+                onClick={() => onNavigate('comparador')}
+                style={{
+                  background: 'none', border: '2px dashed var(--border)',
+                  borderRadius: '10px', padding: '12px 14px',
+                  cursor: 'pointer', color: 'var(--text-muted)',
+                  fontSize: '12px', fontWeight: 600,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+                  transition: 'all .15s', fontFamily: 'inherit',
+                }}
+                onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--danger)'; e.currentTarget.style.color = 'var(--danger)' }}
+                onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--text-muted)' }}
+              >
+                <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>open_in_new</span>
+                Ver en Comparador
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* ── Guía de uso ────────────────────────────────────────────────── */}
         <div className="bento-card bento-span-12" style={{ borderRadius: 'var(--radius-lg)', marginBottom: '0' }}>
