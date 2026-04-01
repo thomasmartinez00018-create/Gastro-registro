@@ -55,13 +55,13 @@ jobs:
             3. Al abrir la app ingresá tu clave de licencia
 
             ### Novedades de esta versión
+            - 🔎 **Auditoría de Precios** — nueva función en Lista de Compra: filtrá por categoría (ej: "Carnes"), agregá todos de un rubro con un click y exportá un PDF tipo reporte ejecutivo
+            - 📄 **PDF mejorado** — resumen con ahorro potencial, distribución por categoría, tabla de mejor proveedor + alternativas, y pedidos listos por proveedor
             - 💾 **Backup / Restore** de base de datos en Configuración
             - 📊 **Alertas de precio automáticas** en el Dashboard (subidas >10%)
-            - 🤖 **Equivalencias IA más robusta** — fix definitivo del error de productos duplicados
-            - 🎨 **Comparador mejorado** — fila de mejor precio con color del sistema
+            - 🤖 **Equivalencias IA más robusta** — fix del error de productos duplicados
             - 🛡️ **Error Boundary global** — pantallas con error muestran mensaje amigable
             - 🔍 **Búsqueda múltiple** en Comparador — pegá una lista de productos (uno por línea)
-            - 🔧 Fix instalador: Términos y Condiciones se muestran correctamente
 
             ### Requisitos
             - Windows 10 o superior (64 bits)
