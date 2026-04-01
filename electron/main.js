@@ -142,6 +142,7 @@ function initDB() {
   const cols = db.prepare("PRAGMA table_info(productos)").all().map(c => c.name)
   if (!cols.includes('codigos_maxirest')) db.exec("ALTER TABLE productos ADD COLUMN codigos_maxirest TEXT")
   if (!cols.includes('rubro_maxirest'))   db.exec("ALTER TABLE productos ADD COLUMN rubro_maxirest TEXT")
+  if (!cols.includes('codigo_barras')) db.exec("ALTER TABLE productos ADD COLUMN codigo_barras TEXT")
   // Listas versioning
   const listasCols = db.prepare("PRAGMA table_info(listas)").all().map(c => c.name)
   if (!listasCols.includes('activo')) db.exec("ALTER TABLE listas ADD COLUMN activo INTEGER DEFAULT 1")
@@ -222,8 +223,8 @@ ipcMain.handle('productos:getAll', () => {
 })
 ipcMain.handle('productos:create', (_, p) => {
   try {
-    const stmt = db.prepare(`INSERT OR IGNORE INTO productos (codigo,producto,categoria,marca,unidad_base,contenido_unitario,unidad_medida,presentacion_referencia,alias,codigos_maxirest,rubro_maxirest,activo)
-      VALUES (@codigo,@producto,@categoria,@marca,@unidad_base,@contenido_unitario,@unidad_medida,@presentacion_referencia,@alias,@codigos_maxirest,@rubro_maxirest,@activo)`)
+    const stmt = db.prepare(`INSERT OR IGNORE INTO productos (codigo,producto,categoria,marca,unidad_base,contenido_unitario,unidad_medida,presentacion_referencia,alias,codigos_maxirest,rubro_maxirest,activo,codigo_barras)
+      VALUES (@codigo,@producto,@categoria,@marca,@unidad_base,@contenido_unitario,@unidad_medida,@presentacion_referencia,@alias,@codigos_maxirest,@rubro_maxirest,@activo,@codigo_barras)`)
     const r = stmt.run(p)
     // Si fue ignorado (ya existía), devolvemos el registro existente sin error
     if (r.changes === 0) {
@@ -243,7 +244,7 @@ ipcMain.handle('productos:create', (_, p) => {
 ipcMain.handle('productos:update', (_, p) => {
   db.prepare(`UPDATE productos SET codigo=@codigo,producto=@producto,categoria=@categoria,marca=@marca,unidad_base=@unidad_base,
     contenido_unitario=@contenido_unitario,unidad_medida=@unidad_medida,presentacion_referencia=@presentacion_referencia,
-    alias=@alias,codigos_maxirest=@codigos_maxirest,rubro_maxirest=@rubro_maxirest,activo=@activo
+    alias=@alias,codigos_maxirest=@codigos_maxirest,rubro_maxirest=@rubro_maxirest,activo=@activo,codigo_barras=@codigo_barras
     WHERE id=@id`).run(p)
   return p
 })

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import api from '../api'
 import { parsePresentacion } from '../utils/presentacion'
 
@@ -69,6 +69,12 @@ export default function Comparador() {
   const [listaSearch,   setListaSearch]   = useState('')
   const [listaSearchCat, setListaSearchCat] = useState('')
   const [listaLoading,  setListaLoading]  = useState(false)
+
+  // ── lector de código de barras (lista de compra) ────────────────────────────
+  const [scannerMode,  setScannerMode]  = useState(false)
+  const [scannerInput, setScannerInput] = useState('')
+  const [scannerFeedback, setScannerFeedback] = useState(null) // {type:'ok'|'warn'|'dup', msg, prod?}
+  const scannerRef = useRef(null)
 
   // ─── impuestos por proveedor ────────────────────────────────────────────────
   const provMap = useMemo(() => {
@@ -282,6 +288,36 @@ td{padding:5px 8px;border-bottom:1px solid #f0f0f0}tr.best td{background:#f0fdf4
     } catch (e) {
       alert(`Error al leer el archivo: ${e.message}`)
     } finally { setListaLoading(false) }
+  }
+
+  // ── Lector de código de barras → lista de compra ─────────────────────────────
+  const handleScannerInput = (val) => {
+    const code = val.trim()
+    if (!code) return
+    setScannerInput('')
+    // Buscar por: código de barras, código interno, código maxirest, o nombre exacto
+    const found = productos.find(p =>
+      p.activo !== 0 && (
+        (p.codigo_barras && p.codigo_barras.trim() === code) ||
+        p.codigo === code ||
+        (p.codigos_maxirest || '').split(',').map(s => s.trim()).includes(code)
+      )
+    )
+    if (!found) {
+      setScannerFeedback({ type: 'warn', msg: `Código "${code}" no encontrado` })
+      setTimeout(() => setScannerFeedback(null), 2500)
+      return
+    }
+    if (listaItems.find(i => i.codigo === found.codigo)) {
+      setScannerFeedback({ type: 'dup', msg: `"${found.producto}" ya está en la lista`, prod: found })
+      setTimeout(() => setScannerFeedback(null), 2000)
+      return
+    }
+    addToLista(found)
+    setScannerFeedback({ type: 'ok', msg: `✓ ${found.producto}`, prod: found })
+    setTimeout(() => setScannerFeedback(null), 1800)
+    // Mantener foco para el próximo escaneo
+    setTimeout(() => scannerRef.current?.focus(), 50)
   }
 
   // Precios calculados para la lista de compra
@@ -719,6 +755,49 @@ tr.other-row td.pxm{color:#6b7280}
                   </div>
 
                   <div style={{ borderTop: '1px solid var(--border-light)', marginTop: '10px', paddingTop: '10px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+
+                    {/* Lector de código de barras */}
+                    <button
+                      className={`btn btn-sm ${scannerMode ? 'btn-accent' : 'btn-secondary'}`}
+                      style={{ width: '100%', justifyContent: 'center', gap: '5px' }}
+                      onClick={() => {
+                        setScannerMode(v => !v)
+                        setScannerInput('')
+                        setScannerFeedback(null)
+                        if (!scannerMode) setTimeout(() => scannerRef.current?.focus(), 80)
+                      }}
+                    >
+                      <span className="material-symbols-outlined" style={{ fontSize: '15px' }}>barcode_scanner</span>
+                      {scannerMode ? 'Cerrar escáner' : 'Lector de código de barras'}
+                    </button>
+
+                    {scannerMode && (
+                      <div style={{ background: 'var(--surface-3)', borderRadius: '8px', padding: '10px', border: '1px solid var(--border)' }}>
+                        <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '6px', textAlign: 'center' }}>
+                          Apuntá el lector al producto
+                        </div>
+                        <input
+                          ref={scannerRef}
+                          className="form-input font-mono"
+                          style={{ fontSize: '13px', textAlign: 'center', letterSpacing: '1px' }}
+                          placeholder="Esperando escaneo…"
+                          value={scannerInput}
+                          onChange={e => setScannerInput(e.target.value)}
+                          onKeyDown={e => { if (e.key === 'Enter') handleScannerInput(scannerInput) }}
+                          autoFocus
+                        />
+                        {scannerFeedback && (
+                          <div style={{
+                            marginTop: '6px', padding: '6px 8px', borderRadius: '6px', fontSize: '12px', textAlign: 'center', fontWeight: 600,
+                            background: scannerFeedback.type === 'ok' ? 'rgba(110,231,183,0.12)' : scannerFeedback.type === 'dup' ? 'rgba(252,197,112,0.12)' : 'rgba(255,100,100,0.12)',
+                            color: scannerFeedback.type === 'ok' ? 'var(--success)' : scannerFeedback.type === 'dup' ? 'var(--primary)' : 'var(--danger)',
+                          }}>
+                            {scannerFeedback.msg}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
                     <button className="btn btn-secondary btn-sm" style={{ width: '100%', justifyContent: 'center' }}
                       onClick={cargarDesdeMaxirest} disabled={listaLoading}>
                       {listaLoading ? '⏳ Cargando...' : '📥 Cargar desde Maxirest'}

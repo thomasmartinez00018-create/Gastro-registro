@@ -10,7 +10,7 @@ const UNIDADES = ['kg','g','litro','ml','unidad','docena','bulto','caja','bidon'
 const EMPTY = {
   codigo: '', producto: '', categoria: '', marca: '', unidad_base: '',
   contenido_unitario: '', unidad_medida: '', presentacion_referencia: '',
-  alias: '', codigos_maxirest: '', rubro_maxirest: '', activo: 1
+  alias: '', codigos_maxirest: '', rubro_maxirest: '', activo: 1, codigo_barras: ''
 }
 
 // Auto-generate our alphanumeric code from product name
@@ -140,6 +140,7 @@ export default function Productos() {
     if (!code) return
     const found = items.find(i =>
       i.codigo === code ||
+      (i.codigo_barras || '').trim() === code ||
       (i.codigos_maxirest || '').split(',').map(s => s.trim()).includes(code)
     )
     if (found) { openEdit(found); setBarcodeVal('') }
@@ -328,7 +329,7 @@ Respondé SOLO con JSON válido, sin texto extra:
   const cats = [...new Set(items.map(i => i.categoria).filter(Boolean))].sort()
   const filtered = items.filter(i => {
     const q = search.toLowerCase()
-    const matchSearch = !q || i.codigo?.toLowerCase().includes(q) || i.producto?.toLowerCase().includes(q) || i.alias?.toLowerCase().includes(q) || (i.codigos_maxirest || '').includes(q)
+    const matchSearch = !q || i.codigo?.toLowerCase().includes(q) || i.producto?.toLowerCase().includes(q) || i.alias?.toLowerCase().includes(q) || (i.codigos_maxirest || '').includes(q) || (i.codigo_barras || '').toLowerCase().includes(q)
     return matchSearch && (!catFilter || i.categoria === catFilter)
   })
 
@@ -382,7 +383,7 @@ Respondé SOLO con JSON válido, sin texto extra:
         <div className="card mb-3">
           <div className="card-body" style={{ display: 'flex', gap: '12px', alignItems: 'center', padding: '12px 16px' }}>
             <div className="search-bar" style={{ flex: 1 }}>
-              <input className="form-input" placeholder="Buscar por código, nombre, alias o código Maxirest..." value={search} onChange={e => setSearch(e.target.value)} />
+              <input className="form-input" placeholder="Buscar por código, nombre, alias, Maxirest o código de barras..." value={search} onChange={e => setSearch(e.target.value)} />
             </div>
             <select className="form-select" style={{ width: '180px' }} value={catFilter} onChange={e => setCatFilter(e.target.value)}>
               <option value="">Todas las categorías</option>
@@ -515,6 +516,24 @@ Respondé SOLO con JSON válido, sin texto extra:
                   placeholder="Ej: harina 000, harina 25kg, har 000"
                   value={form.alias || ''} onChange={e => setForm(f => ({ ...f, alias: e.target.value }))} />
               </div>
+              <div className="form-group">
+                <label className="form-label">
+                  Código de barras&nbsp;
+                  <span style={{ fontWeight: 400, color: 'var(--text-muted)', fontSize: '11px' }}>(opcional)</span>
+                </label>
+                <input
+                  className="form-input font-mono"
+                  placeholder="Ej: 7790001234567"
+                  value={form.codigo_barras || ''}
+                  onChange={e => setForm(f => ({ ...f, codigo_barras: e.target.value.trim() }))}
+                  onKeyDown={e => {
+                    // Si el usuario tiene el lector conectado y escanea acá directo
+                    if (e.key === 'Enter') e.preventDefault()
+                  }}
+                />
+                <div className="text-muted mt-1">Código EAN/UPC del producto. Permite buscarlo con un lector de código de barras.</div>
+              </div>
+
               <div style={{ borderTop: '1px solid var(--border)', paddingTop: '14px', marginTop: '4px' }}>
                 <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: '10px' }}>
                   🔗 Vinculación con Maxirest
