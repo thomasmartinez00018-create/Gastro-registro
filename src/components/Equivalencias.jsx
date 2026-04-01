@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import api from '../api'
 import { callAI } from '../ai'
@@ -42,12 +42,14 @@ const CONFIANZA_BADGE = {
 }
 
 export default function Equivalencias() {
-  const [listas,    setListas]    = useState([])
-  const [productos, setProductos] = useState([])
-  const [filter,    setFilter]    = useState('PENDIENTE')
-  const [provFilter,setProvFilter]= useState('')
-  const [saving,    setSaving]    = useState({})
-  const [page,      setPage]      = useState(0)
+  const [listas,     setListas]     = useState([])
+  const [productos,  setProductos]  = useState([])
+  const [proveedores,setProveedores]= useState([])
+  const [filter,     setFilter]     = useState('PENDIENTE')
+  const [provFilter, setProvFilter] = useState('')
+  const [catFilter,  setCatFilter]  = useState('')
+  const [saving,     setSaving]     = useState({})
+  const [page,       setPage]       = useState(0)
 
   // ── AI modal ──────────────────────────────────────────────────────────────
   const [aiOpen,        setAiOpen]        = useState(false)
@@ -60,13 +62,18 @@ export default function Equivalencias() {
   const [aiPassSummary, setAiPassSummary] = useState(null) // { pasadas, resueltos, noResueltos }
 
   const load = useCallback(async () => {
-    const [l, p] = await Promise.all([api.listas.getAll(), api.productos.getAll()])
+    const [l, p, provs] = await Promise.all([
+      api.listas.getAll(),
+      api.productos.getAll(),
+      api.proveedores.getAll(),
+    ])
     setListas(l)
     setProductos(p.filter(x => x.activo))
+    setProveedores(provs)
   }, [])
 
   useEffect(() => { load() }, [load])
-  useEffect(() => { setPage(0) }, [filter, provFilter])
+  useEffect(() => { setPage(0) }, [filter, provFilter, catFilter])
 
   // ── Asignación manual ─────────────────────────────────────────────────────
   const handleAssign = async (lista, codigoProducto) => {
@@ -306,10 +313,35 @@ export default function Equivalencias() {
   const resueltos   = listas.filter(l => l.estado_match === 'OK')
   const provsList   = [...new Set(listas.map(l => l.id_proveedor).filter(Boolean))]
 
+  // Mapa id_proveedor → nombre
+  const provNombres = useMemo(() => {
+    const m = {}
+    proveedores.forEach(p => { m[p.id_proveedor] = p.proveedor })
+    return m
+  }, [proveedores])
+
+  // Mapa codigo_producto → categoria (para filtrar por categoría en Equivalencias)
+  const prodCatMap = useMemo(() => {
+    const m = {}
+    productos.forEach(p => { m[p.codigo] = p.categoria || '' })
+    return m
+  }, [productos])
+
+  // Categorías presentes en los registros ya identificados
+  const catsEnListas = useMemo(() => {
+    const cats = new Set()
+    listas.forEach(l => {
+      if (l.codigo_producto && prodCatMap[l.codigo_producto])
+        cats.add(prodCatMap[l.codigo_producto])
+    })
+    return [...cats].sort()
+  }, [listas, prodCatMap])
+
   const filtered = listas.filter(l => {
     const mF = filter === 'ALL' || l.estado_match === filter
     const mP = !provFilter || l.id_proveedor === provFilter
-    return mF && mP
+    const mC = !catFilter || prodCatMap[l.codigo_producto] === catFilter
+    return mF && mP && mC
   })
 
   const totalPages = Math.ceil(filtered.length / PAGE_SIZE)
@@ -373,11 +405,20 @@ export default function Equivalencias() {
                   onClick={() => setFilter(v)}>{l}</button>
               ))}
             </div>
-            <select className="form-select" style={{ width:'180px' }}
-              value={provFilter} onChange={e => setProvFilter(e.target.value)}>
+            <select className="form-select" style={{ width:'190px' }}
+              value={provFilter} onChange={e => { setProvFilter(e.target.value); setCatFilter('') }}>
               <option value="">Todos los proveedores</option>
-              {provsList.map(p => <option key={p} value={p}>{p}</option>)}
+              {provsList.map(p => (
+                <option key={p} value={p}>{provNombres[p] || p}</option>
+              ))}
             </select>
+            {catsEnListas.length > 0 && (
+              <select className="form-select" style={{ width:'170px' }}
+                value={catFilter} onChange={e => setCatFilter(e.target.value)}>
+                <option value="">Todas las categorías</option>
+                {catsEnListas.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            )}
             <span className="text-muted">{filtered.length} registros</span>
           </div>
         </div>
@@ -406,7 +447,10 @@ export default function Equivalencias() {
                   <tbody>
                     {pageItems.map(item => (
                       <tr key={item.id}>
-                        <td><span className="font-mono text-muted">{item.id_proveedor}</span></td>
+                        <td>
+                          <span style={{ fontWeight: 500 }}>{provNombres[item.id_proveedor] || item.id_proveedor}</span>
+                          <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'monospace' }}>{item.id_proveedor}</div>
+                        </td>
                         <td style={{ fontWeight:500, maxWidth:'200px', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}
                             title={item.producto_original}>{item.producto_original}</td>
                         <td className="text-muted">{item.presentacion_original || '—'}</td>
