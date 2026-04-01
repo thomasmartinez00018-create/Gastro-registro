@@ -57,16 +57,17 @@ jobs:
             3. Al abrir la app ingresá tu clave de licencia
 
             ### Novedades de esta versión
-            - 📱 **Pedido por WhatsApp** — desde Lista de compra o desde Pedidos, genera el mensaje y abre WhatsApp directo al proveedor con prefijo +549
-            - 📋 **Historial de pedidos** — cada pedido enviado queda guardado con estado Enviado / Recibido / Cancelado
-            - 🛒 **Armar lista desde selección** — seleccionás productos en el comparador y con un click pasan a Lista de compra
-            - 📷 **Lector de código de barras** — escaneás productos físicos y se agregan automáticamente a la lista
-            - 🏷️ **Código de barras en productos** — campo EAN/UPC opcional, buscable en toda la app
+            - 📊 **Import Excel mejorado** — vista previa de las filas reales del Excel en el paso de mapeo de columnas
+            - 🔎 **Ejemplos por columna** — al seleccionar una columna se muestran valores de ejemplo para confirmar que elegiste la correcta
+            - ⚠️ **Guía clara de campos obligatorios** — aviso inline que indica exactamente qué campo falta mapear cuando el botón está deshabilitado
+            - 📱 **Pedido por WhatsApp** — genera el mensaje y abre WhatsApp directo al proveedor con prefijo +549
+            - 📋 **Historial de pedidos** — cada pedido queda guardado con estado Enviado / Recibido / Cancelado
+            - 🛒 **Armar lista desde selección** — productos seleccionados en el comparador pasan a Lista de compra con un click
+            - 📷 **Lector de código de barras** — escaneás y los productos se agregan automáticamente
+            - 🏷️ **Código de barras en productos** — campo EAN/UPC buscable en toda la app
             - 🔤 **Tamaño de texto ajustable** — Chica / Normal / Grande en Configuración
             - 🔑 **IA integrada** — clave OpenAI embebida, no requiere configuración
             - 💾 **Backup / Restore** de base de datos en Configuración
-            - 📊 **Alertas de precio automáticas** en el Dashboard (subidas >10%)
-            - 🤖 **Equivalencias IA más robusta** — fix del error de productos duplicados
 
             ### Requisitos
             - Windows 10 o superior (64 bits)
