@@ -60,8 +60,9 @@
       "createStartMenuShortcut": true,
       "shortcutName": "Gestión Proveedores",
       "license": "build/license.txt",
-      "installerLanguages": ["es_AR"],
-      "language": "3082"
+      "include": "build/installer.nsh",
+      "installerLanguages": ["en_US"],
+      "language": "1033"
     },
     "mac": {
       "target": "dmg",
