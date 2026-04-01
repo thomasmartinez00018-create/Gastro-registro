@@ -789,6 +789,11 @@ tr.other-row td.pxm{color:#6b7280}
                 </div>
                 <div className="card-body" style={{ padding: '12px' }}>
 
+                  {/* Búsqueda va PRIMERO — el select nativo de Windows abre hacia abajo
+                      y tapa el input si está debajo */}
+                  <input className="form-input" style={{ marginBottom: '6px', fontSize: '12px' }}
+                    placeholder="Buscar producto..." value={listaSearch} onChange={e => setListaSearch(e.target.value)} />
+
                   {/* Filtro por categoría con botón "Agregar todos" */}
                   <div style={{ marginBottom: '8px', display: 'flex', gap: '5px', alignItems: 'center' }}>
                     <select
@@ -811,9 +816,6 @@ tr.other-row td.pxm{color:#6b7280}
                       </button>
                     )}
                   </div>
-
-                  <input className="form-input" style={{ marginBottom: '8px', fontSize: '12px' }}
-                    placeholder="Buscar producto..." value={listaSearch} onChange={e => setListaSearch(e.target.value)} />
 
                   <div style={{ maxHeight: '340px', overflowY: 'auto', margin: '0 -4px' }}>
                     {productosParaLista.length === 0 && (
@@ -926,6 +928,7 @@ tr.other-row td.pxm{color:#6b7280}
                             <th>Otras opciones</th>
                             <th>$/unidad</th>
                             <th>Subtotal</th>
+                            <th>WA</th>
                             <th></th>
                           </tr>
                         </thead>
@@ -973,6 +976,22 @@ tr.other-row td.pxm{color:#6b7280}
                               </td>
                               <td style={{ fontWeight: 700, fontSize: '14px' }}>
                                 {it.subtotal != null ? fmt(it.subtotal) : '—'}
+                              </td>
+                              <td>
+                                {it.bestProveedor ? (
+                                  <button
+                                    className="btn btn-accent btn-xs"
+                                    title={`Pedir a ${it.bestProveedor} por WhatsApp`}
+                                    style={{ fontSize: '13px', padding: '3px 7px' }}
+                                    onClick={() => handleEnviarPedido(it.bestProveedor, {
+                                      items: [it],
+                                      total: it.subtotal || 0,
+                                      id_proveedor: it.bestIdProveedor,
+                                    })}
+                                  >
+                                    📲
+                                  </button>
+                                ) : <span style={{ color: 'var(--text-light)', fontSize: '11px' }}>—</span>}
                               </td>
                               <td>
                                 <button className="btn btn-ghost btn-xs" onClick={() => removeFromLista(it.codigo)} title="Quitar">✕</button>
@@ -1115,6 +1134,7 @@ tr.other-row td.pxm{color:#6b7280}
                             <th>${unidadLabel === 'kg' ? '/kg' : unidadLabel === 'litro' ? '/litro' : `/${unidadLabel}`}</th>
                             <th>% vs mejor</th>
                             <th>Fecha</th>
+                            <th></th>
                           </tr>
                         </thead>
                         <tbody>
@@ -1159,6 +1179,22 @@ tr.other-row td.pxm{color:#6b7280}
                                     : <PctBadge value={vsMejor} small />}
                                 </td>
                                 <td className="text-muted">{r.fecha || '—'}</td>
+                                <td>
+                                  {(() => {
+                                    const prod = productos.find(p => p.codigo === cod)
+                                    const yaEnLista = listaItems.some(i => i.codigo === cod)
+                                    return prod ? (
+                                      <button
+                                        className={`btn btn-xs ${yaEnLista ? 'btn-ghost' : 'btn-secondary'}`}
+                                        title={yaEnLista ? 'Ya está en la lista' : `Agregar a lista (${r.proveedor || r.id_proveedor})`}
+                                        onClick={() => { if (!yaEnLista) { addToLista(prod); setViewMode('lista') } }}
+                                        style={{ fontSize: '13px', padding: '2px 6px' }}
+                                      >
+                                        {yaEnLista ? '✓' : '🛒'}
+                                      </button>
+                                    ) : null
+                                  })()}
+                                </td>
                               </tr>
                             )
                           })}

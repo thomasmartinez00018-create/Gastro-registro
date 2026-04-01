@@ -138,8 +138,8 @@ export default function Proveedores() {
                       <td><span className={`badge ${item.activo ? 'badge-green' : 'badge-gray'}`}>{item.activo ? 'Activo' : 'Inactivo'}</span></td>
                       <td>
                         <div style={{ display: 'flex', gap: '4px' }}>
-                          <button className="btn btn-ghost btn-sm" onClick={() => openEdit(item)}>✏️</button>
-                          <button className="btn btn-ghost btn-sm" onClick={() => handleDelete(item.id)}>🗑️</button>
+                          <button className="btn btn-secondary btn-sm" onClick={() => openEdit(item)} title="Editar proveedor">✏️ Editar</button>
+                          <button className="btn btn-ghost btn-sm" onClick={() => handleDelete(item.id)} title="Eliminar">🗑️</button>
                         </div>
                       </td>
                     </tr>
