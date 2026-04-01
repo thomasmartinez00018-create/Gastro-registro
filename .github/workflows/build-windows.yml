@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write   # necesario para crear GitHub Releases
+  contents: write
 
 jobs:
   build:
@@ -25,24 +25,20 @@ jobs:
       - name: Instalar dependencias
         run: npm install
 
-      - name: Recompilar better-sqlite3 para Electron
+      - name: Recompilar better-sqlite3 para Electron (Windows x64)
         run: npx @electron/rebuild -f -w better-sqlite3
         env:
           npm_config_msvs_version: '2022'
 
       - name: Build Vite (frontend)
         run: npx vite build
-        env:
-          VITE_OPENAI_KEY: ${{ secrets.VITE_OPENAI_KEY }}
 
-      - name: Package Electron (Windows .exe)
+      - name: Package Electron — Windows .exe (NSIS)
         run: npx electron-builder --win --x64 --config.npmRebuild=false --publish never
 
       - name: Listar archivos generados
         if: always()
-        run: |
-          echo "=== dist-electron contents ==="
-          dir dist-electron /s /b 2>nul || echo "dist-electron not found"
+        run: dir dist-electron /s /b 2>nul || echo "dist-electron not found"
         shell: cmd
 
       - name: Publicar Release en GitHub
@@ -51,14 +47,27 @@ jobs:
         with:
           name: "Gestión Proveedores ${{ github.ref_name }}"
           body: |
-            ## 📦 Instalador Windows
+            ## 📦 Gestión de Proveedores ${{ github.ref_name }}
 
+            ### Instalación
             1. Descargá el archivo `.exe`
-            2. Doble clic para instalar
-            3. Abrí la app → **⚙️ Configuración** → ingresá tu OpenAI API key
+            2. Doble clic → seguí el asistente de instalación
+            3. Al abrir la app ingresá tu clave de licencia
 
-            **Requisitos:** Windows 10 o superior (64 bits)
-          files: dist-electron/**/*.exe
+            ### Novedades de esta versión
+            - 💾 **Backup / Restore** de base de datos en Configuración
+            - 📊 **Alertas de precio automáticas** en el Dashboard (subidas >10%)
+            - 🤖 **Equivalencias IA más robusta** — fix definitivo del error de productos duplicados
+            - 🎨 **Comparador mejorado** — fila de mejor precio con color del sistema
+            - 🛡️ **Error Boundary global** — pantallas con error muestran mensaje amigable
+            - 🔍 **Búsqueda múltiple** en Comparador — pegá una lista de productos (uno por línea)
+            - 🔧 Fix instalador: Términos y Condiciones se muestran correctamente
+
+            ### Requisitos
+            - Windows 10 o superior (64 bits)
+            - Sin conexión a internet obligatoria — todos los datos son locales
+          files: |
+            dist-electron/**/*.exe
           draft: false
           prerelease: false
         env:
