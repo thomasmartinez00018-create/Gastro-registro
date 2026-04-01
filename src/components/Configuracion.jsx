@@ -98,12 +98,10 @@ export const FONT_SIZES = {
 export function applyFontSize(key) {
   const sz = FONT_SIZES[key]
   if (!sz) return
-  // Electron: zoom real vía IPC (afecta TODO: texto, íconos, botones)
+  // Solo aplica en Electron vía IPC — en browser no hay zoom real disponible
+  // sin romper los event handlers de React (coordinate shifting)
   if (window.api?.app?.setZoom) {
     window.api.app.setZoom(sz.zoom)
-  } else {
-    // Fallback web: CSS zoom
-    document.documentElement.style.zoom = sz.zoom
   }
 }
 
