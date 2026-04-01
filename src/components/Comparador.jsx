@@ -134,6 +134,16 @@ export default function Comparador() {
     multiSearch.split('\n').map(t => t.trim().toLowerCase()).filter(Boolean)
   , [multiSearch])
 
+  // ── Helpers de agrupamiento — deben estar ANTES de los useMemo que los usan ──
+  const getUltimaRows = rows => {
+    const byProv = {}
+    rows.forEach(r => {
+      const k = r.id_proveedor || r.proveedor
+      if (!byProv[k] || (r.fecha || '') > (byProv[k].fecha || '')) byProv[k] = r
+    })
+    return Object.values(byProv)
+  }
+
   const entries = useMemo(() =>
     Object.entries(grouped).filter(([cod, g]) => {
       const mC = !catFilter || g.categoria === catFilter
@@ -153,14 +163,6 @@ export default function Comparador() {
     })
   , [grouped, catFilter, search, useMultiSearch, multiTerms, filterDiff]) // eslint-disable-line
 
-  const getUltimaRows = rows => {
-    const byProv = {}
-    rows.forEach(r => {
-      const k = r.id_proveedor || r.proveedor
-      if (!byProv[k] || (r.fecha || '') > (byProv[k].fecha || '')) byProv[k] = r
-    })
-    return Object.values(byProv)
-  }
   const getEvoRows = cod =>
     allListas
       .filter(l => l.codigo_producto === cod && l.estado_match === 'OK' && l.precio_por_medida_base != null)

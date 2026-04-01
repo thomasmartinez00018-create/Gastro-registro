@@ -7,8 +7,22 @@
 export function buildWALink(whatsapp, message) {
   if (!whatsapp) return null
   let num = String(whatsapp).replace(/\D/g, '')      // solo dígitos
-  if (num.startsWith('0')) num = num.slice(1)         // quitar 0 inicial
-  if (!num.startsWith('54') && num.length >= 8) num = '54' + num  // agregar código AR
+
+  // Quitar prefijo 0 inicial (ej: "0115678901" → "115678901")
+  if (num.startsWith('0')) num = num.slice(1)
+
+  // Normalizar a formato wa.me argentino: 549XXXXXXXXXX
+  // WhatsApp AR móvil requiere 549 (54 = país, 9 = móvil)
+  if (num.startsWith('549')) {
+    // ya tiene el formato correcto
+  } else if (num.startsWith('54')) {
+    // tiene código país pero falta el 9 de móvil
+    num = '549' + num.slice(2)
+  } else {
+    // número local sin código país
+    num = '549' + num
+  }
+
   return `https://wa.me/${num}?text=${encodeURIComponent(message)}`
 }
 
