@@ -172,6 +172,16 @@ export default function Comparador() {
   const selectAllVis  = ()  => setSelectedProds(new Set(entries.map(([c]) => c)))
   const clearSel      = ()  => setSelectedProds(new Set())
 
+  // Pasar selección a lista de compra → cambia de pestaña y agrega los productos
+  const handleAddSelectedToLista = () => {
+    [...selectedProds].forEach(cod => {
+      const prod = productos.find(p => p.codigo === cod)
+      if (prod) addToLista(prod)
+    })
+    setViewMode('lista')
+    clearSel()
+  }
+
   // ─── exportar selección (comparador) ─────────────────────────────────────────
   const handleExportMaxirest = async () => {
     setExporting(true)
@@ -191,7 +201,7 @@ export default function Comparador() {
   const handleExportSelExcel = async () => {
     if (!selectedProds.size) return; setExporting(true)
     try {
-      const grupos = entries.filter(([c]) => selectedProds.has(c)).map(([cod, g]) => {
+      const grupos = Object.entries(grouped).filter(([c]) => selectedProds.has(c)).map(([cod, g]) => {
         const rows = [...getUltimaRows(g.rows)].sort((a, b) => (adjustedPxm(a) ?? Infinity) - (adjustedPxm(b) ?? Infinity))
         return {
           codigo: cod, producto: g.producto || cod, categoria: g.categoria || '',
@@ -213,7 +223,8 @@ export default function Comparador() {
 
   const handleExportSelPDF = () => {
     if (!selectedProds.size) return
-    const selEntries = entries.filter(([c]) => selectedProds.has(c))
+    // Usar grouped (no entries) para que los filtros de búsqueda activos no excluyan seleccionados
+    const selEntries = Object.entries(grouped).filter(([c]) => selectedProds.has(c))
     const date = new Date().toLocaleDateString('es-AR', { day: '2-digit', month: 'long', year: 'numeric' })
     let html = `<!DOCTYPE html><html lang="es"><head><meta charset="utf-8">
 <style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;font-size:12px;color:#111;background:#fff}
@@ -1223,6 +1234,16 @@ tr.other-row td.pxm{color:#6b7280}
           <span style={{ color: '#f1f5f9', fontSize: '13px', fontWeight: 600, whiteSpace: 'nowrap' }}>
             ☑ {selectedProds.size} seleccionado{selectedProds.size !== 1 ? 's' : ''}
           </span>
+          <div style={{ width: '1px', height: '20px', background: 'rgba(255,255,255,.15)' }} />
+          <button
+            className="btn btn-sm"
+            style={{ background: 'var(--primary)', color: '#111', border: 'none', fontWeight: 700, gap: '4px' }}
+            onClick={handleAddSelectedToLista}
+            title="Agregar los productos seleccionados a la Lista de compra"
+          >
+            <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>shopping_cart</span>
+            Armar lista
+          </button>
           <div style={{ width: '1px', height: '20px', background: 'rgba(255,255,255,.15)' }} />
           <button className="btn btn-sm" style={{ background: '#16a34a', color: '#fff', border: 'none', fontWeight: 600 }}
             onClick={handleExportSelExcel} disabled={exporting}>
