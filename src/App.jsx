@@ -6,7 +6,7 @@ import Proveedores      from './components/Proveedores'
 import ImportarLista    from './components/ImportarLista'
 import Equivalencias    from './components/Equivalencias'
 import Comparador       from './components/Comparador'
-import Configuracion, { loadAppSettings, applyTheme } from './components/Configuracion'
+import Configuracion, { loadAppSettings, applyTheme, applyFontSize } from './components/Configuracion'
 import SimuladorFactura from './components/SimuladorFactura'
 import ActivacionScreen from './components/ActivacionScreen'
 import GeneradorLicencias from './components/GeneradorLicencias'
@@ -93,6 +93,7 @@ function AppInner() {
     const s = loadAppSettings()
     setAppSettings(s)
     applyTheme(s.theme || 'gastronomica')
+    applyFontSize(s.fontSize || 'normal')
   }, [])
 
   useEffect(() => {
@@ -100,6 +101,7 @@ function AppInner() {
       const s = e.detail
       setAppSettings(s)
       applyTheme(s.theme || 'gastronomica')
+      applyFontSize(s.fontSize || 'normal')
     }
     window.addEventListener('app-settings-changed', handler)
     return () => window.removeEventListener('app-settings-changed', handler)

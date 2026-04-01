@@ -88,12 +88,26 @@ export function applyTheme(key) {
   })
 }
 
+// ─── Tamaños de fuente ────────────────────────────────────────────────────────
+export const FONT_SIZES = {
+  chica:   { label: 'Chica',   icon: 'text_decrease', px: '12px', desc: 'Más contenido en pantalla' },
+  normal:  { label: 'Normal',  icon: 'text_fields',   px: '14px', desc: 'Tamaño por defecto'        },
+  grande:  { label: 'Grande',  icon: 'text_increase', px: '16px', desc: 'Mayor legibilidad'          },
+}
+
+export function applyFontSize(key) {
+  const sz = FONT_SIZES[key]
+  if (!sz) return
+  document.documentElement.style.setProperty('--font-size-base', sz.px)
+}
+
 export function loadAppSettings() {
   try {
     const raw = localStorage.getItem('app_settings')
-    if (!raw) return { restaurantName: '', logoBase64: '', theme: 'gastronomica' }
-    return JSON.parse(raw)
-  } catch { return { restaurantName: '', logoBase64: '', theme: 'gastronomica' } }
+    if (!raw) return { restaurantName: '', logoBase64: '', theme: 'gastronomica', fontSize: 'normal' }
+    const s = JSON.parse(raw)
+    return { fontSize: 'normal', ...s }
+  } catch { return { restaurantName: '', logoBase64: '', theme: 'gastronomica', fontSize: 'normal' } }
 }
 
 function saveAppSettings(settings) {
@@ -106,6 +120,7 @@ export default function Configuracion() {
   const [restaurantName, setRestaurantName] = useState('')
   const [logoBase64, setLogoBase64]         = useState('')
   const [theme, setTheme]                   = useState('gastronomica')
+  const [fontSize, setFontSize]             = useState('normal')
   const [settingsSaved, setSettingsSaved]   = useState(false)
   const [backupStatus, setBackupStatus]     = useState(null)  // { type: 'ok'|'error', msg }
   const [backupLoading, setBackupLoading]   = useState(false)
@@ -116,6 +131,8 @@ export default function Configuracion() {
     setRestaurantName(s.restaurantName || '')
     setLogoBase64(s.logoBase64 || '')
     setTheme(s.theme || 'gastronomica')
+    setFontSize(s.fontSize || 'normal')
+    applyFontSize(s.fontSize || 'normal')
   }, [])
 
   const handleLogoChange = (e) => {
@@ -130,6 +147,11 @@ export default function Configuracion() {
   const handleThemePreview = (key) => {
     setTheme(key)
     applyTheme(key)
+  }
+
+  const handleFontSizePreview = (key) => {
+    setFontSize(key)
+    applyFontSize(key)
   }
 
   const handleBackupExport = async () => {
@@ -167,9 +189,10 @@ export default function Configuracion() {
   }
 
   const handleSaveSettings = () => {
-    const s = { restaurantName: restaurantName.trim(), logoBase64, theme }
+    const s = { restaurantName: restaurantName.trim(), logoBase64, theme, fontSize }
     saveAppSettings(s)
     applyTheme(theme)
+    applyFontSize(fontSize)
     setSettingsSaved(true)
     setTimeout(() => setSettingsSaved(false), 2500)
   }
@@ -302,6 +325,64 @@ export default function Configuracion() {
                         textAlign: 'center',
                       }}>
                         {t.label}
+                      </span>
+                      {active && (
+                        <span style={{
+                          fontSize: '10px', background: 'var(--accent)', color: '#fff',
+                          borderRadius: '10px', padding: '1px 7px', fontWeight: 700,
+                        }}>
+                          Activo
+                        </span>
+                      )}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            {/* Tamaño de fuente */}
+            <div className="form-group" style={{ marginBottom: '24px' }}>
+              <label className="form-label">Tamaño de texto</label>
+              <div style={{ display: 'flex', gap: '10px' }}>
+                {Object.entries(FONT_SIZES).map(([k, sz]) => {
+                  const active = fontSize === k
+                  return (
+                    <button
+                      key={k}
+                      onClick={() => handleFontSizePreview(k)}
+                      style={{
+                        flex: 1,
+                        padding: '14px 10px',
+                        borderRadius: '10px',
+                        border: active ? '2px solid var(--accent)' : '2px solid var(--border)',
+                        background: active ? 'var(--accent-light)' : 'var(--surface-2)',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        gap: '6px',
+                        transition: 'all 0.15s',
+                        fontFamily: 'inherit',
+                      }}
+                    >
+                      <span
+                        className="material-symbols-outlined"
+                        style={{
+                          fontSize: k === 'chica' ? '18px' : k === 'normal' ? '22px' : '28px',
+                          color: active ? 'var(--accent)' : 'var(--text-muted)',
+                        }}
+                      >
+                        {sz.icon}
+                      </span>
+                      <span style={{
+                        fontSize: '12px',
+                        fontWeight: active ? 700 : 500,
+                        color: active ? 'var(--accent)' : 'var(--text)',
+                      }}>
+                        {sz.label}
+                      </span>
+                      <span style={{ fontSize: '10px', color: 'var(--text-muted)', textAlign: 'center' }}>
+                        {sz.desc}
                       </span>
                       {active && (
                         <span style={{

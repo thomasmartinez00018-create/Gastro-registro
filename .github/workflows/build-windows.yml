@@ -32,6 +32,8 @@ jobs:
 
       - name: Build Vite (frontend)
         run: npx vite build
+        env:
+          VITE_OPENAI_KEY: ${{ secrets.VITE_OPENAI_KEY }}
 
       - name: Package Electron — Windows .exe (NSIS)
         run: npx electron-builder --win --x64 --config.npmRebuild=false --publish never
