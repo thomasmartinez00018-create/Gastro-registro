@@ -69,4 +69,8 @@ contextBridge.exposeInMainWorld('api', {
     export:  () => ipcRenderer.invoke('backup:export'),
     restore: () => ipcRenderer.invoke('backup:restore'),
   },
+  // Zoom / Tamaño de fuente
+  app: {
+    setZoom: (factor) => ipcRenderer.invoke('app:setZoom', factor),
+  },
 })

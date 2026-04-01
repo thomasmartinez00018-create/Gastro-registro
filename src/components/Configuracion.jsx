@@ -90,15 +90,21 @@ export function applyTheme(key) {
 
 // ─── Tamaños de fuente ────────────────────────────────────────────────────────
 export const FONT_SIZES = {
-  chica:   { label: 'Chica',   icon: 'text_decrease', px: '12px', desc: 'Más contenido en pantalla' },
-  normal:  { label: 'Normal',  icon: 'text_fields',   px: '14px', desc: 'Tamaño por defecto'        },
-  grande:  { label: 'Grande',  icon: 'text_increase', px: '16px', desc: 'Mayor legibilidad'          },
+  chica:   { label: 'Chica',   icon: 'text_decrease', zoom: 0.82, desc: 'Más contenido en pantalla' },
+  normal:  { label: 'Normal',  icon: 'text_fields',   zoom: 1.00, desc: 'Tamaño por defecto'        },
+  grande:  { label: 'Grande',  icon: 'text_increase', zoom: 1.25, desc: 'Mayor legibilidad'          },
 }
 
 export function applyFontSize(key) {
   const sz = FONT_SIZES[key]
   if (!sz) return
-  document.documentElement.style.setProperty('--font-size-base', sz.px)
+  // Electron: zoom real vía IPC (afecta TODO: texto, íconos, botones)
+  if (window.api?.app?.setZoom) {
+    window.api.app.setZoom(sz.zoom)
+  } else {
+    // Fallback web: CSS zoom
+    document.documentElement.style.zoom = sz.zoom
+  }
 }
 
 export function loadAppSettings() {

@@ -584,6 +584,26 @@ ipcMain.handle('dialog:saveFile', async (_, { defaultName }) => {
   return result.filePath
 })
 
+// ─── Zoom ─────────────────────────────────────────────────────────────────────
+function getZoomSettingsPath() {
+  return path.join(app.getPath('userData'), 'zoom.json')
+}
+function readSavedZoom() {
+  try {
+    const raw = fs.readFileSync(getZoomSettingsPath(), 'utf8')
+    const z = JSON.parse(raw).factor
+    return (typeof z === 'number' && z > 0) ? z : 1.0
+  } catch { return 1.0 }
+}
+
+ipcMain.handle('app:setZoom', (_, factor) => {
+  const wins = BrowserWindow.getAllWindows()
+  if (wins.length > 0) wins[0].webContents.setZoomFactor(factor)
+  // Persistir para el próximo arranque
+  try { fs.writeFileSync(getZoomSettingsPath(), JSON.stringify({ factor })) } catch {}
+  return { ok: true }
+})
+
 // ─── Window ───────────────────────────────────────────────────────────────────
 function createWindow(port) {
   const win = new BrowserWindow({
@@ -606,7 +626,12 @@ function createWindow(port) {
     win.loadURL(`http://localhost:${port}`)
   }
 
-  win.once('ready-to-show', () => win.show())
+  win.once('ready-to-show', () => {
+    // Restaurar zoom guardado antes de mostrar la ventana (sin flash)
+    const savedZoom = readSavedZoom()
+    if (savedZoom !== 1.0) win.webContents.setZoomFactor(savedZoom)
+    win.show()
+  })
 
   // Ctrl+Shift+I abre DevTools en cualquier versión (dev o producción)
   // Sirve para depurar errores en Windows sin necesidad de recompilar
