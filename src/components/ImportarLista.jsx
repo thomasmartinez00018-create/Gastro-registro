@@ -737,9 +737,16 @@ Respondé SOLO con JSON, sin texto extra:
                     Continuar → Procesar con IA
                   </button>
                 ) : (
-                  <button className="btn btn-primary" onClick={handleLoadSheet} disabled={!archivo || !idProveedor}>
-                    Continuar →
-                  </button>
+                  <>
+                    <button className="btn btn-primary" onClick={handleLoadSheet} disabled={!archivo || !idProveedor}>
+                      Continuar →
+                    </button>
+                    {archivo?.tipo === 'excel' && !idProveedor && (
+                      <p style={{ fontSize: '13px', color: 'var(--warning)', marginTop: '8px' }}>
+                        ⚠️ Seleccioná un proveedor para continuar
+                      </p>
+                    )}
+                  </>
                 )}
               </div>
             </div>
@@ -756,21 +763,96 @@ Respondé SOLO con JSON, sin texto extra:
               </button>
             </div>
             <div className="card-body">
-              {aiMessage && <div className="alert alert-info mb-3">{aiMessage}</div>}
-              <div className="form-row" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '12px' }}>
-                {CAMPOS.map(c => (
-                  <div className="form-group" key={c.key} style={{ margin: 0 }}>
-                    <label className="form-label">{c.label}{c.required && ' *'}</label>
-                    <select className="form-select" value={mapping[c.key] || ''} onChange={e => setMapping(m => ({ ...m, [c.key]: e.target.value }))}>
-                      <option value="">— No incluido —</option>
-                      {headers.map((h, i) => <option key={i} value={String(i)}>{h}</option>)}
-                    </select>
+              {aiMessage && (
+                <div className={`alert ${aiMessage.startsWith('✅') ? 'alert-info' : 'alert-info'} mb-3`}>
+                  {aiMessage}
+                </div>
+              )}
+
+              {/* ── Vista previa de las primeras filas ──────────────────────── */}
+              {(() => {
+                const rawRows = archivo?.sheets?.[sheetSel]
+                const dataRows = rawRows ? rawRows.slice(headerRow, headerRow + 3) : []
+                if (!headers.length || !dataRows.length) return null
+                return (
+                  <div style={{ marginBottom: '18px' }}>
+                    <p style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '6px', fontWeight: 500 }}>
+                      📋 Primeras filas del Excel — identificá qué columna corresponde a cada campo:
+                    </p>
+                    <div style={{ overflowX: 'auto', borderRadius: '6px', border: '1px solid var(--border)' }}>
+                      <table style={{ fontSize: '12px', borderCollapse: 'collapse', width: '100%' }}>
+                        <thead>
+                          <tr style={{ background: 'var(--bg-secondary)' }}>
+                            {headers.map((h, i) => (
+                              <th key={i} style={{ padding: '5px 10px', borderBottom: '1px solid var(--border)', borderRight: '1px solid var(--border)', textAlign: 'left', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                                <span style={{ display: 'block', color: 'var(--text-secondary)', fontWeight: 400, fontSize: '10px' }}>Col {i}</span>
+                                {h}
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {dataRows.map((row, ri) => (
+                            <tr key={ri} style={{ background: ri % 2 === 0 ? 'transparent' : 'var(--bg-secondary)' }}>
+                              {headers.map((_, ci) => (
+                                <td key={ci} style={{ padding: '4px 10px', borderBottom: '1px solid var(--border)', borderRight: '1px solid var(--border)', whiteSpace: 'nowrap', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                  {row[ci] != null ? String(row[ci]) : <span style={{ color: 'var(--text-secondary)' }}>—</span>}
+                                </td>
+                              ))}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
-                ))}
+                )
+              })()}
+
+              {/* ── Selectores de columna ──────────────────────────────────── */}
+              <div className="form-row" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '12px' }}>
+                {CAMPOS.map(c => {
+                  const rawRows = archivo?.sheets?.[sheetSel]
+                  const dataRows = rawRows ? rawRows.slice(headerRow, headerRow + 4) : []
+                  const colIdx = parseInt(mapping[c.key])
+                  const sampleVals = isNaN(colIdx)
+                    ? []
+                    : dataRows.map(r => r?.[colIdx]).filter(v => v != null && String(v).trim() !== '')
+                  return (
+                    <div className="form-group" key={c.key} style={{ margin: 0 }}>
+                      <label className="form-label">{c.label}{c.required && ' *'}</label>
+                      <select
+                        className="form-select"
+                        value={mapping[c.key] || ''}
+                        onChange={e => setMapping(m => ({ ...m, [c.key]: e.target.value }))}
+                        style={c.required && !mapping[c.key] ? { borderColor: 'var(--warning)' } : {}}
+                      >
+                        <option value="">— No incluido —</option>
+                        {headers.map((h, i) => <option key={i} value={String(i)}>{i}: {h}</option>)}
+                      </select>
+                      {sampleVals.length > 0 && (
+                        <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '3px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          ej: {sampleVals.slice(0, 2).map(v => `"${String(v).slice(0, 28)}"`).join(', ')}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
               </div>
-              <div style={{ marginTop: '16px', display: 'flex', gap: '8px' }}>
+
+              <div style={{ marginTop: '16px', display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
                 <button className="btn btn-secondary" onClick={() => setStep(1)}>← Atrás</button>
-                <button className="btn btn-primary" onClick={handleBuildRows} disabled={!mapping.producto_original || !mapping.precio_informado}>Previsualizar →</button>
+                <button className="btn btn-primary" onClick={handleBuildRows} disabled={!mapping.producto_original || !mapping.precio_informado}>
+                  Previsualizar →
+                </button>
+                {(!mapping.producto_original || !mapping.precio_informado) && (
+                  <span style={{ fontSize: '13px', color: 'var(--warning)' }}>
+                    ⚠️ Falta mapear:{' '}
+                    {[
+                      !mapping.producto_original && 'Descripción del producto',
+                      !mapping.precio_informado  && 'Precio',
+                    ].filter(Boolean).join(' y ')}
+                  </span>
+                )}
               </div>
             </div>
           </div>
