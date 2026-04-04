@@ -385,7 +385,7 @@ ipcMain.handle('comparador:getComparativa', (_, filtros) => {
       l.precio_por_medida_base
     FROM listas l
     LEFT JOIN productos p ON l.codigo_producto = p.codigo
-    WHERE l.codigo_producto IS NOT NULL AND l.estado_match = 'OK'
+    WHERE l.codigo_producto IS NOT NULL AND l.estado_match = 'OK' AND l.activo = 1
   `
   const params = []
   if (filtros && filtros.categoria) {
@@ -798,10 +798,10 @@ function importSyncData(data) {
   const checkLista = db.prepare('SELECT id FROM listas WHERE id_proveedor=? AND codigo_producto=? AND activo=1 LIMIT 1')
   const insertLista = db.prepare(`INSERT INTO listas
     (fecha,id_proveedor,proveedor,producto_original,unidad_medida,precio_informado,codigo_producto,estado_match,precio_por_unidad,precio_por_medida_base,activo)
-    VALUES (@fecha,@id_proveedor,@proveedor,@producto_original,@unidad_medida,@precio_informado,@codigo_producto,'OK',@precio_informado,@precio_informado,1)`)
+    VALUES (@fecha,@id_proveedor,@proveedor,@producto_original,@unidad_medida,@precio_informado,@codigo_producto,'OK',@precio_informado,NULL,1)`)
   const updateLista = db.prepare(`UPDATE listas SET
     precio_informado=@precio_informado, precio_por_unidad=@precio_informado,
-    precio_por_medida_base=@precio_informado, fecha=@fecha
+    precio_por_medida_base=NULL, fecha=@fecha
     WHERE id_proveedor=@id_proveedor AND codigo_producto=@codigo_producto AND activo=1`)
 
   const tx = db.transaction(() => {

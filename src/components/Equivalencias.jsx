@@ -234,12 +234,12 @@ export default function Equivalencias() {
     try {
       // Pasada 0 — guardar lo que el usuario aprobó en la vista de revisión
       const toApply = aiResults.filter(r => aiApproved.has(r.id))
-      await saveResults(toApply)
+      const saved0 = await saveResults(toApply)
       await load()
 
       // Pasadas automáticas adicionales
       let pass = 1
-      let totalResueltos = toApply.filter(r => r.codigo || r.nombre_sugerido).length
+      let totalResueltos = saved0
       let pendientesRestantes = 0
 
       while (pass < MAX_PASSES) {

@@ -322,8 +322,10 @@ export default function ImportarLista() {
           } else {
             // Create new provider automatically
             const todos = await api.proveedores.getAll()
-            const num = String(todos.length + 1).padStart(3, '0')
-            const nuevoId = 'PROV' + num
+            const existingIds = new Set(todos.map(p => p.id_proveedor))
+            let num = todos.length + 1
+            let nuevoId = 'PROV' + String(num).padStart(3, '0')
+            while (existingIds.has(nuevoId)) { num++; nuevoId = 'PROV' + String(num).padStart(3, '0') }
             const nuevo = {
               id_proveedor: nuevoId,
               proveedor: nombreDetectado.toUpperCase(),
@@ -340,7 +342,11 @@ export default function ImportarLista() {
         } else {
           // Can't detect — try from filename
           const nombreArchivo = archivo?.name.replace(/\.[^.]+$/, '').replace(/[\d_\-\.]/g, ' ').trim()
-          const nuevoId = 'PROV' + String((await api.proveedores.getAll()).length + 1).padStart(3, '0')
+          const todosB = await api.proveedores.getAll()
+          const existingIdsB = new Set(todosB.map(p => p.id_proveedor))
+          let numB = todosB.length + 1
+          let nuevoId = 'PROV' + String(numB).padStart(3, '0')
+          while (existingIdsB.has(nuevoId)) { numB++; nuevoId = 'PROV' + String(numB).padStart(3, '0') }
           const nuevo = {
             id_proveedor: nuevoId,
             proveedor: nombreArchivo.toUpperCase() || 'PROVEEDOR SIN NOMBRE',
@@ -406,7 +412,12 @@ export default function ImportarLista() {
   // ── Excel AI mapping ────────────────────────────────────────────────────────
   const handleAiMapping = async () => {
     const rawRows = archivo?.sheets?.[sheetSel]
-    const sample = rawRows.slice(0, Math.min(headerRow + 5, rawRows.length))
+    if (!rawRows || rawRows.length === 0) {
+      setAiMessage('No hay datos en la hoja seleccionada. Volvé al paso 1.')
+      return
+    }
+    const startIdx = Math.max(0, headerRow - 1)
+    const sample = rawRows.slice(startIdx, Math.min(startIdx + 6, rawRows.length))
     const sampleText = sample.map(r => r.join(' | ')).join('\n')
     setAiProcessing(true); setAiMessage('Detectando columnas con IA...')
     try {

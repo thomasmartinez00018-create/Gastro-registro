@@ -161,7 +161,7 @@ export default function Comparador() {
       }
       return mC && mS && mD
     })
-  , [grouped, catFilter, search, useMultiSearch, multiTerms, filterDiff]) // eslint-disable-line
+  , [grouped, catFilter, search, useMultiSearch, multiTerms, filterDiff, conImpuestos, provMap])
 
   const getEvoRows = cod =>
     allListas
@@ -285,7 +285,8 @@ td{padding:5px 8px;border-bottom:1px solid #f0f0f0}tr.best td{background:#f0fdf4
     setListaLoading(true)
     try {
       const { unicos } = await api.maxirest.parseInsumos(filePath)
-      let agregados = 0
+      const toAdd = []
+      const seen = new Set(listaItems.map(i => i.codigo))
       for (const ins of unicos) {
         // Buscar producto interno por codigos_maxirest
         const match = productos.find(p =>
@@ -293,17 +294,19 @@ td{padding:5px 8px;border-bottom:1px solid #f0f0f0}tr.best td{background:#f0fdf4
           p.codigos_maxirest.split(',').map(c => c.trim()).includes(ins.codigo_maxirest)
         )
         if (match && !listaItems.find(i => i.codigo === match.codigo)) {
-          setListaItems(prev => [...prev, {
+          toAdd.push({
             codigo: match.codigo, producto: match.producto, categoria: match.categoria || '',
             unidad_base: match.unidad_base || 'kg', cantidad: 1,
-          }])
-          agregados++
+          })
+          seen.add(match.codigo)
         }
       }
-      if (agregados === 0)
+      if (toAdd.length === 0)
         alert('No se encontraron insumos del Maxirest con equivalencia en productos internos.\nAsegurate de tener los códigos Maxirest asignados en cada producto.')
-      else
-        alert(`✅ ${agregados} productos agregados desde Maxirest.`)
+      else {
+        setListaItems(prev => [...prev, ...toAdd])
+        alert(`✅ ${toAdd.length} productos agregados desde Maxirest.`)
+      }
     } catch (e) {
       alert(`Error al leer el archivo: ${e.message}`)
     } finally { setListaLoading(false) }
@@ -354,7 +357,7 @@ td{padding:5px 8px;border-bottom:1px solid #f0f0f0}tr.best td{background:#f0fdf4
       opciones:  rows,
       unidadLabel: effectiveBaseUnit(g.rows),
     }
-  }), [listaItems, grouped, conImpuestos]) // eslint-disable-line
+  }), [listaItems, grouped, conImpuestos, provMap])
 
   const listaTotal = listaConPrecios.reduce((s, i) => s + (i.subtotal || 0), 0)
 
