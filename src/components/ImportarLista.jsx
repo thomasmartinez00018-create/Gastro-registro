@@ -367,7 +367,7 @@ export default function ImportarLista() {
         let codMatch = null, estadoMatch = 'PENDIENTE'
         for (const prod of productos) {
           const aliases = (prod.alias || '').toLowerCase().split(',').map(a => a.trim()).filter(Boolean)
-          const nombres = [prod.producto.toLowerCase(), ...aliases]
+          const nombres = [(prod.producto || '').toLowerCase(), ...aliases]
           if (nombres.some(n => desc.includes(n) || n.includes(desc))) { codMatch = prod.codigo; estadoMatch = 'OK'; break }
         }
         // Inferir cantidad total desde la presentación usando el parser robusto
@@ -492,7 +492,7 @@ Respondé SOLO con JSON válido, sin texto extra ni markdown:
         let codMatch = null, estadoMatch = 'PENDIENTE'
         for (const prod of productos) {
           const aliases = (prod.alias || '').toLowerCase().split(',').map(a => a.trim()).filter(Boolean)
-          const nombres = [prod.producto.toLowerCase(), ...aliases]
+          const nombres = [(prod.producto || '').toLowerCase(), ...aliases]
           if (nombres.some(n => desc.includes(n) || n.includes(desc))) { codMatch = prod.codigo; estadoMatch = 'OK'; break }
         }
         return {

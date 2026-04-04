@@ -626,7 +626,7 @@ tr.other-row td.pxm{color:#6b7280}
     return productos
       .filter(p => p.activo
         && (!listaSearchCat || p.categoria === listaSearchCat)
-        && (!q || p.producto.toLowerCase().includes(q) || (p.codigo || '').toLowerCase().includes(q)))
+        && (!q || p.producto?.toLowerCase().includes(q) || (p.codigo || '').toLowerCase().includes(q)))
       .filter(p => !listaItems.find(i => i.codigo === p.codigo))
       .slice(0, 80)
   }, [productos, listaSearch, listaSearchCat, listaItems])
