@@ -123,6 +123,10 @@ function AppInner() {
     })
   }
 
+  // Mobile menu (debe estar antes de early returns — regla de hooks)
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const closeMobile = () => setMobileMenuOpen(false)
+
   // Pantalla de carga
   if (authLoading) return (
     <div style={{ position: 'fixed', inset: 0, background: '#111316', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -138,8 +142,14 @@ function AppInner() {
   return (
     <div className="app-layout">
 
+      {/* ── Mobile hamburger ──────────────────────────────────────────── */}
+      <button className="mobile-menu-btn" onClick={() => setMobileMenuOpen(v => !v)}>
+        <span className="material-symbols-outlined">{mobileMenuOpen ? 'close' : 'menu'}</span>
+      </button>
+      <div className={`sidebar-overlay ${mobileMenuOpen ? 'visible' : ''}`} onClick={closeMobile} />
+
       {/* ── Sidebar ──────────────────────────────────────────────────────── */}
-      <aside className={`sidebar ${sidebarCollapsed ? 'collapsed' : ''}`}>
+      <aside className={`sidebar ${sidebarCollapsed ? 'collapsed' : ''} ${mobileMenuOpen ? 'mobile-open' : ''}`}>
 
         {/* Botón colapsar */}
         <button className="sidebar-collapse-btn" onClick={toggleSidebar} title={sidebarCollapsed ? 'Expandir' : 'Colapsar'}>
@@ -165,7 +175,7 @@ function AppInner() {
                   <button
                     key={item.id}
                     className={`nav-item ${page === item.id ? 'active' : ''}`}
-                    onClick={() => setPage(item.id)}
+                    onClick={() => { setPage(item.id); closeMobile() }}
                   >
                     <span className="icon">
                       <span className="material-symbols-outlined">{item.icon}</span>
