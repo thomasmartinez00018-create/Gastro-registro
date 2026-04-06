@@ -113,7 +113,7 @@ function AppInner() {
   const { restaurantName } = appSettings
 
   // Network info (solo en Electron)
-  const [lanUrl, setLanUrl] = useState(null)
+  const [lanUrl, setLanUrl] = useState(IS_DEV ? 'http://192.168.1.5:3001' : null)
   const [showQr, setShowQr] = useState(false)
   useEffect(() => {
     if (!window.api?.network?.getInfo) return

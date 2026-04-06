@@ -310,7 +310,7 @@ ipcMain.handle('network:getInfo', () => {
   const addresses = []
   for (const iface of Object.values(interfaces)) {
     for (const info of iface) {
-      if (info.family === 'IPv4' && !info.internal) addresses.push(info.address)
+      if ((info.family === 'IPv4' || info.family === 4) && !info.internal) addresses.push(info.address)
     }
   }
   const port = global.__lanPort || 3001
