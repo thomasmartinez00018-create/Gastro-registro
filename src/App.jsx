@@ -111,6 +111,18 @@ function AppInner() {
 
   const { restaurantName } = appSettings
 
+  // Sidebar colapsable
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    try { return localStorage.getItem('sidebar_collapsed') === 'true' } catch { return false }
+  })
+  const toggleSidebar = () => {
+    setSidebarCollapsed(prev => {
+      const next = !prev
+      try { localStorage.setItem('sidebar_collapsed', String(next)) } catch {}
+      return next
+    })
+  }
+
   // Pantalla de carga
   if (licensed === null) return (
     <div style={{ position: 'fixed', inset: 0, background: '#111316', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -129,7 +141,12 @@ function AppInner() {
     <div className="app-layout">
 
       {/* ── Sidebar ──────────────────────────────────────────────────────── */}
-      <aside className="sidebar">
+      <aside className={`sidebar ${sidebarCollapsed ? 'collapsed' : ''}`}>
+
+        {/* Botón colapsar */}
+        <button className="sidebar-collapse-btn" onClick={toggleSidebar} title={sidebarCollapsed ? 'Expandir' : 'Colapsar'}>
+          <span className="material-symbols-outlined">{sidebarCollapsed ? 'chevron_right' : 'chevron_left'}</span>
+        </button>
 
         {/* Logo / Identidad */}
         <div className="sidebar-logo">
