@@ -24,20 +24,30 @@ const MIME = {
 
 const createServer = require('./server')
 
-function startLocalServer(distPath) {
-  return new Promise((resolve, reject) => {
-    const expressApp = createServer({ db, JWT_SECRET, distPath })
-    const LAN_PORT = 3001
-    const server = expressApp.listen(LAN_PORT, '0.0.0.0', () => {
-      global.__lanPort = LAN_PORT
-      console.log(`[Express] LAN server listening on 0.0.0.0:${LAN_PORT}`)
-      resolve(LAN_PORT)
+function startLocalServer(distPath, candidatePorts = [3001, 3002, 3003, 3004, 3005]) {
+  const expressApp = createServer({ db, JWT_SECRET, distPath })
+
+  function tryPort(ports) {
+    return new Promise((resolve, reject) => {
+      if (!ports.length) return reject(new Error('No hay puertos disponibles'))
+      const [port, ...rest] = ports
+      const server = expressApp.listen(port, '0.0.0.0', () => {
+        global.__lanPort = port
+        console.log(`[Express] LAN server listening on 0.0.0.0:${port}`)
+        resolve(port)
+      })
+      server.on('error', (err) => {
+        if (err.code === 'EADDRINUSE') {
+          console.warn(`[Express] Puerto ${port} ocupado, intentando ${rest[0] ?? 'ninguno'}...`)
+          server.close(() => tryPort(rest).then(resolve).catch(reject))
+        } else {
+          reject(err)
+        }
+      })
     })
-    server.on('error', (err) => {
-      console.error('[Express] Error al iniciar servidor LAN:', err.message)
-      reject(err)
-    })
-  })
+  }
+
+  return tryPort(candidatePorts)
 }
 
 // ─── Database setup ───────────────────────────────────────────────────────────
