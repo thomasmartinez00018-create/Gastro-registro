@@ -80,4 +80,21 @@ contextBridge.exposeInMainWorld('api', {
   app: {
     setZoom: (factor) => ipcRenderer.invoke('app:setZoom', factor),
   },
+  // Auth
+  auth: {
+    login:    (data)  => ipcRenderer.invoke('auth:login', data),
+    validate: (token) => ipcRenderer.invoke('auth:validate', token),
+    logout:   ()      => ipcRenderer.invoke('auth:logout'),
+  },
+  // Users (admin)
+  users: {
+    getAll: ()     => ipcRenderer.invoke('users:getAll'),
+    create: (data) => ipcRenderer.invoke('users:create', data),
+    update: (data) => ipcRenderer.invoke('users:update', data),
+    delete: (id)   => ipcRenderer.invoke('users:delete', id),
+  },
+  // Network
+  network: {
+    getInfo: () => ipcRenderer.invoke('network:getInfo'),
+  },
 })

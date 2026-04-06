@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { ImportProvider, useImport } from './ImportContext'
+import { AuthProvider, useAuth } from './AuthContext'
 import Dashboard        from './components/Dashboard'
 import Productos        from './components/Productos'
 import Proveedores      from './components/Proveedores'
@@ -8,53 +9,61 @@ import Equivalencias    from './components/Equivalencias'
 import Comparador       from './components/Comparador'
 import Configuracion, { loadAppSettings, applyTheme, applyFontSize } from './components/Configuracion'
 import SimuladorFactura from './components/SimuladorFactura'
-import ActivacionScreen from './components/ActivacionScreen'
+import LoginScreen      from './components/LoginScreen'
 import GeneradorLicencias from './components/GeneradorLicencias'
 import Vincular from './components/Vincular'
+import Usuarios from './components/Usuarios'
+import AccesoRed from './components/AccesoRed'
 import ErrorBoundary from './components/ErrorBoundary'
 
 const IS_DEV = import.meta.env.DEV
+const IS_ELECTRON = !!window.api
 
-const SECTIONS = [
-  {
-    title: 'General',
-    items: [
-      { id: 'dashboard',     label: 'Dashboard',        icon: 'dashboard'      },
-      { id: 'configuracion', label: 'Configuración',     icon: 'settings'       },
-    ]
-  },
-  {
-    title: 'Catálogos',
-    items: [
-      { id: 'productos',     label: 'Productos',         icon: 'inventory_2'    },
-      { id: 'proveedores',   label: 'Proveedores',       icon: 'factory'        },
-    ]
-  },
-  {
-    title: 'Listas de Precios',
-    items: [
-      { id: 'importar',      label: 'Importar Lista',    icon: 'upload_file'    },
-      { id: 'equivalencias', label: 'Equivalencias',     icon: 'compare_arrows' },
-    ]
-  },
-  {
-    title: 'Análisis',
-    items: [
-      { id: 'comparador',    label: 'Comparador',        icon: 'bar_chart'      },
-      { id: 'simulador',     label: 'Pedidos',           icon: 'receipt_long'   },
-    ]
-  },
-  {
-    title: 'Integración',
-    items: [
-      { id: 'vincular',      label: 'Vincular OPS',      icon: 'link'           },
-    ]
-  },
-  ...( IS_DEV ? [{
-    title: 'Desarrollador',
-    items: [{ id: 'licencias', label: 'Generar Licencias', icon: 'key' }],
-  }] : []),
-]
+function buildSections(isAdmin) {
+  const sections = [
+    {
+      title: 'General',
+      items: [
+        { id: 'dashboard',     label: 'Dashboard',        icon: 'dashboard'      },
+        { id: 'configuracion', label: 'Configuración',    icon: 'settings'       },
+        ...(isAdmin ? [{ id: 'usuarios', label: 'Usuarios', icon: 'group' }] : []),
+        ...(IS_ELECTRON ? [{ id: 'acceso_red', label: 'Acceso Red', icon: 'wifi' }] : []),
+      ]
+    },
+    {
+      title: 'Catálogos',
+      items: [
+        { id: 'productos',     label: 'Productos',         icon: 'inventory_2'    },
+        { id: 'proveedores',   label: 'Proveedores',       icon: 'factory'        },
+      ]
+    },
+    {
+      title: 'Listas de Precios',
+      items: [
+        { id: 'importar',      label: 'Importar Lista',    icon: 'upload_file'    },
+        { id: 'equivalencias', label: 'Equivalencias',     icon: 'compare_arrows' },
+      ]
+    },
+    {
+      title: 'Análisis',
+      items: [
+        { id: 'comparador',    label: 'Comparador',        icon: 'bar_chart'      },
+        { id: 'simulador',     label: 'Pedidos',           icon: 'receipt_long'   },
+      ]
+    },
+    {
+      title: 'Integración',
+      items: [
+        { id: 'vincular',      label: 'Vincular OPS',      icon: 'link'           },
+      ]
+    },
+    ...( IS_DEV ? [{
+      title: 'Desarrollador',
+      items: [{ id: 'licencias', label: 'Generar Licencias', icon: 'key' }],
+    }] : []),
+  ]
+  return sections
+}
 
 const PAGES = {
   dashboard:     Dashboard,
@@ -67,24 +76,15 @@ const PAGES = {
   simulador:     SimuladorFactura,
   licencias:     GeneradorLicencias,
   vincular:      Vincular,
+  usuarios:      Usuarios,
+  acceso_red:    AccesoRed,
 }
 
 function AppInner() {
   const [page, setPage] = useState('dashboard')
   const { job } = useImport()
+  const { user, logout, isAdmin, loading: authLoading } = useAuth()
   const Page = PAGES[page] || Dashboard
-
-  // Licencia
-  const [licensed,   setLicensed]   = useState(null)
-  const [licCliente, setLicCliente] = useState('')
-
-  useEffect(() => {
-    if (!window.api?.license) { setLicensed(true); return }
-    window.api.license.check().then(res => {
-      setLicensed(res.activated)
-      setLicCliente(res.cliente || '')
-    }).catch(() => setLicensed(true))
-  }, [])
 
   // Personalización
   const [appSettings, setAppSettings] = useState({ restaurantName: '', logoBase64: '', theme: 'gastronomica' })
@@ -124,18 +124,16 @@ function AppInner() {
   }
 
   // Pantalla de carga
-  if (licensed === null) return (
+  if (authLoading) return (
     <div style={{ position: 'fixed', inset: 0, background: '#111316', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <div style={{ color: '#64748b', fontSize: '13px', fontFamily: 'Inter, sans-serif', display: 'flex', alignItems: 'center', gap: '10px' }}>
-        <span className="material-symbols-outlined" style={{ animation: 'spin 1.2s linear infinite', color: '#fcc570' }}>autorenew</span>
-        Verificando licencia…
+        <span className="material-symbols-outlined" style={{ animation: 'spin 1.2s linear infinite', color: 'var(--accent)' }}>autorenew</span>
+        Verificando sesión…
       </div>
     </div>
   )
 
-  if (!licensed && !IS_DEV) return (
-    <ActivacionScreen onActivated={() => setLicensed(true)} />
-  )
+  if (!user) return <LoginScreen />
 
   return (
     <div className="app-layout">
@@ -158,7 +156,7 @@ function AppInner() {
 
         {/* Navegación */}
         <nav className="sidebar-nav">
-          {SECTIONS.map(section => (
+          {buildSections(isAdmin).map(section => (
             <div key={section.title}>
               <div className="nav-section-title">{section.title}</div>
               {section.items.map(item => {
@@ -190,11 +188,21 @@ function AppInner() {
         </nav>
 
         {/* Footer */}
-        <div className="sidebar-footer">
-          <span className="sidebar-footer-badge">v1.2</span>
-          <span className="sidebar-footer-text">
-            {job.aiProcessing ? 'Procesando…' : licCliente || 'Gastronomía'}
-          </span>
+        <div className="sidebar-footer" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '6px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span className="sidebar-footer-badge">{isAdmin ? 'ADMIN' : 'USER'}</span>
+            <span className="sidebar-footer-text" style={{ flex: 1 }}>
+              {user?.display_name || user?.username || 'Usuario'}
+            </span>
+          </div>
+          <button onClick={logout} style={{
+            background: 'none', border: 'none', color: 'var(--text-light)',
+            fontSize: '11px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px',
+            padding: '2px 0', fontFamily: 'inherit',
+          }}>
+            <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>logout</span>
+            Cerrar sesión
+          </button>
         </div>
       </aside>
 
@@ -215,8 +223,10 @@ function AppInner() {
 
 export default function App() {
   return (
-    <ImportProvider>
-      <AppInner />
-    </ImportProvider>
+    <AuthProvider>
+      <ImportProvider>
+        <AppInner />
+      </ImportProvider>
+    </AuthProvider>
   )
 }

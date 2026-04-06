@@ -22,36 +22,16 @@ const MIME = {
   '.ttf':  'font/ttf',
 }
 
+const createServer = require('./server')
+
 function startLocalServer(distPath) {
   return new Promise((resolve) => {
-    const server = http.createServer((req, res) => {
-      // Quitar query strings y fragmentos
-      let urlPath = req.url.split('?')[0].split('#')[0]
-      if (urlPath === '/') urlPath = '/index.html'
-
-      let filePath = path.join(distPath, urlPath)
-
-      // SPA fallback: si no existe el archivo, servir index.html
-      if (!fs.existsSync(filePath)) {
-        filePath = path.join(distPath, 'index.html')
-      }
-
-      const ext = path.extname(filePath).toLowerCase()
-      const mime = MIME[ext] || 'application/octet-stream'
-
-      try {
-        const data = fs.readFileSync(filePath)
-        res.writeHead(200, { 'Content-Type': mime })
-        res.end(data)
-      } catch {
-        res.writeHead(404)
-        res.end('Not found')
-      }
-    })
-
-    // Puerto 0 = sistema elige un puerto libre automáticamente
-    server.listen(0, '127.0.0.1', () => {
-      resolve(server.address().port)
+    const expressApp = createServer({ db, JWT_SECRET, distPath })
+    const LAN_PORT = 3001
+    expressApp.listen(LAN_PORT, '0.0.0.0', () => {
+      global.__lanPort = LAN_PORT
+      console.log(`[Express] LAN server listening on 0.0.0.0:${LAN_PORT}`)
+      resolve(LAN_PORT)
     })
   })
 }
@@ -178,10 +158,52 @@ function initDB() {
   if (!provCols.includes('aplica_iva'))        db.exec("ALTER TABLE proveedores ADD COLUMN aplica_iva INTEGER DEFAULT 0")
   if (!provCols.includes('aplica_percepcion')) db.exec("ALTER TABLE proveedores ADD COLUMN aplica_percepcion INTEGER DEFAULT 0")
   if (!provCols.includes('impuesto_interno'))  db.exec("ALTER TABLE proveedores ADD COLUMN impuesto_interno REAL DEFAULT 0")
+
+  // ── Users table ──────────────────────────────────────────────────────────
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      username TEXT UNIQUE NOT NULL,
+      password_hash TEXT NOT NULL,
+      role TEXT NOT NULL DEFAULT 'user',
+      display_name TEXT,
+      active INTEGER DEFAULT 1,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+  `)
+
+  // Seed admin user if not exists
+  const bcrypt = require('bcryptjs')
+  const adminExists = db.prepare('SELECT id FROM users WHERE username = ?').get('admin')
+  if (!adminExists) {
+    const hash = bcrypt.hashSync('1234', 10)
+    db.prepare('INSERT INTO users (username, password_hash, role, display_name) VALUES (?, ?, ?, ?)').run('admin', hash, 'admin', 'Administrador')
+  }
+
+  // Add user_id to data tables (default 1 = admin owns all legacy data)
+  if (!cols.includes('user_id')) db.exec("ALTER TABLE productos ADD COLUMN user_id INTEGER DEFAULT 1")
+  if (!listasCols.includes('user_id')) db.exec("ALTER TABLE listas ADD COLUMN user_id INTEGER DEFAULT 1")
+  if (!provCols.includes('user_id')) db.exec("ALTER TABLE proveedores ADD COLUMN user_id INTEGER DEFAULT 1")
+  const equivCols = db.prepare("PRAGMA table_info(equivalencias)").all().map(c => c.name)
+  if (!equivCols.includes('user_id')) db.exec("ALTER TABLE equivalencias ADD COLUMN user_id INTEGER DEFAULT 1")
+  const pedidosCols = db.prepare("PRAGMA table_info(pedidos)").all().map(c => c.name)
+  if (!pedidosCols.includes('user_id')) db.exec("ALTER TABLE pedidos ADD COLUMN user_id INTEGER DEFAULT 1")
 }
 
-// ─── Licencias ────────────────────────────────────────────────────────────────
+// ─── Auth / JWT ──────────────────────────────────────────────────────────────
 const crypto = require('crypto')
+const jwt = require('jsonwebtoken')
+
+// JWT secret — generado una vez, persistido en userData
+function getJwtSecret() {
+  const secretPath = path.join(app.getPath('userData'), '.jwt_secret')
+  try { return fs.readFileSync(secretPath, 'utf8') }
+  catch { const s = crypto.randomBytes(32).toString('hex'); fs.writeFileSync(secretPath, s); return s }
+}
+let JWT_SECRET
+let currentUser = null // usuario autenticado en Electron (desktop)
+
+// ─── Licencias ────────────────────────────────────────────────────────────────
 // Clave secreta del desarrollador — NO compartir con clientes
 const LIC_SECRET = 'g4str0_prv_#8xKmP!2024'
 
@@ -224,6 +246,77 @@ ipcMain.handle('license:generate', (_, clienteId) => {
   return buildKey(clienteId)
 })
 
+// ─── Auth IPC ────────────────────────────────────────────────────────────────
+ipcMain.handle('auth:login', (_, { username, password }) => {
+  const bcrypt = require('bcryptjs')
+  const user = db.prepare('SELECT * FROM users WHERE username = ? AND active = 1').get(username)
+  if (!user || !bcrypt.compareSync(password, user.password_hash)) {
+    return { ok: false, error: 'Usuario o contraseña incorrectos' }
+  }
+  const token = jwt.sign({ userId: user.id, role: user.role, username: user.username }, JWT_SECRET, { expiresIn: '30d' })
+  currentUser = { id: user.id, username: user.username, role: user.role, display_name: user.display_name }
+  return { ok: true, token, user: currentUser }
+})
+
+ipcMain.handle('auth:validate', (_, token) => {
+  try {
+    const payload = jwt.verify(token, JWT_SECRET)
+    const user = db.prepare('SELECT id, username, role, display_name FROM users WHERE id = ? AND active = 1').get(payload.userId)
+    if (!user) return { ok: false }
+    currentUser = user
+    return { ok: true, user }
+  } catch { return { ok: false } }
+})
+
+ipcMain.handle('auth:logout', () => { currentUser = null; return { ok: true } })
+
+// ─── Users IPC (admin only) ─────────────────────────────────────────────────
+ipcMain.handle('users:getAll', () => {
+  if (!currentUser || currentUser.role !== 'admin') return []
+  return db.prepare('SELECT id, username, role, display_name, active, created_at FROM users ORDER BY id').all()
+})
+
+ipcMain.handle('users:create', (_, { username, password, role, display_name }) => {
+  if (!currentUser || currentUser.role !== 'admin') throw new Error('No autorizado')
+  const bcrypt = require('bcryptjs')
+  const hash = bcrypt.hashSync(password, 10)
+  const r = db.prepare('INSERT INTO users (username, password_hash, role, display_name) VALUES (?, ?, ?, ?)').run(username, hash, role || 'user', display_name || username)
+  return { id: r.lastInsertRowid, username, role: role || 'user', display_name: display_name || username }
+})
+
+ipcMain.handle('users:update', (_, { id, username, role, display_name, password }) => {
+  if (!currentUser || currentUser.role !== 'admin') throw new Error('No autorizado')
+  if (password) {
+    const bcrypt = require('bcryptjs')
+    const hash = bcrypt.hashSync(password, 10)
+    db.prepare('UPDATE users SET username=?, role=?, display_name=?, password_hash=? WHERE id=?').run(username, role, display_name, hash, id)
+  } else {
+    db.prepare('UPDATE users SET username=?, role=?, display_name=? WHERE id=?').run(username, role, display_name, id)
+  }
+  return { ok: true }
+})
+
+ipcMain.handle('users:delete', (_, id) => {
+  if (!currentUser || currentUser.role !== 'admin') throw new Error('No autorizado')
+  if (id === 1) throw new Error('No se puede eliminar el administrador principal')
+  db.prepare('UPDATE users SET active = 0 WHERE id = ?').run(id)
+  return { ok: true }
+})
+
+// ─── Network info ────────────────────────────────────────────────────────────
+ipcMain.handle('network:getInfo', () => {
+  const os = require('os')
+  const interfaces = os.networkInterfaces()
+  const addresses = []
+  for (const iface of Object.values(interfaces)) {
+    for (const info of iface) {
+      if (info.family === 'IPv4' && !info.internal) addresses.push(info.address)
+    }
+  }
+  const port = global.__lanPort || 3001
+  return { addresses, port, url: addresses.length ? `http://${addresses[0]}:${port}` : null }
+})
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const UNIT_MAP = {
   'kilo': 'kg', 'kilos': 'kg', 'kg': 'kg',
@@ -243,23 +336,27 @@ function normalizeUnit(u) {
 
 // ─── IPC Handlers ─────────────────────────────────────────────────────────────
 
+// ── Helper: filtrado por usuario ─────────────────────────────────────────────
+function isAdmin() { return currentUser && currentUser.role === 'admin' }
+function userId() { return currentUser?.id || 1 }
+
 // Productos
 ipcMain.handle('productos:getAll', () => {
-  return db.prepare('SELECT * FROM productos ORDER BY categoria, producto').all()
+  if (isAdmin()) return db.prepare('SELECT * FROM productos ORDER BY categoria, producto').all()
+  return db.prepare('SELECT * FROM productos WHERE user_id = ? ORDER BY categoria, producto').all(userId())
 })
 ipcMain.handle('productos:create', (_, p) => {
   try {
-    const stmt = db.prepare(`INSERT OR IGNORE INTO productos (codigo,producto,categoria,marca,unidad_base,contenido_unitario,unidad_medida,presentacion_referencia,alias,codigos_maxirest,rubro_maxirest,activo,codigo_barras)
-      VALUES (@codigo,@producto,@categoria,@marca,@unidad_base,@contenido_unitario,@unidad_medida,@presentacion_referencia,@alias,@codigos_maxirest,@rubro_maxirest,@activo,@codigo_barras)`)
-    const r = stmt.run(p)
+    const stmt = db.prepare(`INSERT OR IGNORE INTO productos (codigo,producto,categoria,marca,unidad_base,contenido_unitario,unidad_medida,presentacion_referencia,alias,codigos_maxirest,rubro_maxirest,activo,codigo_barras,user_id)
+      VALUES (@codigo,@producto,@categoria,@marca,@unidad_base,@contenido_unitario,@unidad_medida,@presentacion_referencia,@alias,@codigos_maxirest,@rubro_maxirest,@activo,@codigo_barras,@user_id)`)
+    const r = stmt.run({ ...p, user_id: userId() })
     // Si fue ignorado (ya existía), devolvemos el registro existente sin error
     if (r.changes === 0) {
       const existing = db.prepare('SELECT * FROM productos WHERE codigo = ?').get(p.codigo)
       return existing || { ...p }
     }
-    return { id: r.lastInsertRowid, ...p }
+    return { id: r.lastInsertRowid, ...p, user_id: userId() }
   } catch (err) {
-    // Si por alguna razón llegó un UNIQUE error igual, lo manejamos graciosamente
     if (err.message && err.message.includes('UNIQUE')) {
       const existing = db.prepare('SELECT * FROM productos WHERE codigo = ?').get(p.codigo)
       return existing || { ...p }
@@ -281,13 +378,14 @@ ipcMain.handle('productos:delete', (_, id) => {
 
 // Proveedores
 ipcMain.handle('proveedores:getAll', () => {
-  return db.prepare('SELECT * FROM proveedores ORDER BY proveedor').all()
+  if (isAdmin()) return db.prepare('SELECT * FROM proveedores ORDER BY proveedor').all()
+  return db.prepare('SELECT * FROM proveedores WHERE user_id = ? ORDER BY proveedor').all(userId())
 })
 ipcMain.handle('proveedores:create', (_, p) => {
   const stmt = db.prepare(`INSERT INTO proveedores
-    (id_proveedor,proveedor,contacto,whatsapp,email,observaciones,activo,descuento_pct,aplica_iva,aplica_percepcion,impuesto_interno)
-    VALUES (@id_proveedor,@proveedor,@contacto,@whatsapp,@email,@observaciones,@activo,@descuento_pct,@aplica_iva,@aplica_percepcion,@impuesto_interno)`)
-  const r = stmt.run(p)
+    (id_proveedor,proveedor,contacto,whatsapp,email,observaciones,activo,descuento_pct,aplica_iva,aplica_percepcion,impuesto_interno,user_id)
+    VALUES (@id_proveedor,@proveedor,@contacto,@whatsapp,@email,@observaciones,@activo,@descuento_pct,@aplica_iva,@aplica_percepcion,@impuesto_interno,@user_id)`)
+  const r = stmt.run({ ...p, user_id: userId() })
   return { id: r.lastInsertRowid, ...p }
 })
 ipcMain.handle('proveedores:update', (_, p) => {
@@ -306,14 +404,16 @@ ipcMain.handle('proveedores:delete', (_, id) => {
 
 // Listas
 ipcMain.handle('listas:getAll', () => {
-  return db.prepare('SELECT * FROM listas ORDER BY created_at DESC').all()
+  if (isAdmin()) return db.prepare('SELECT * FROM listas WHERE activo = 1 ORDER BY created_at DESC').all()
+  return db.prepare('SELECT * FROM listas WHERE activo = 1 AND user_id = ? ORDER BY created_at DESC').all(userId())
 })
 ipcMain.handle('listas:insertMany', (_, rows) => {
   const stmt = db.prepare(`INSERT INTO listas (fecha,id_proveedor,proveedor,archivo_origen,producto_original,presentacion_original,
-    tipo_compra,unidades_por_caja,cantidad_por_unidad,unidad_medida,precio_informado,moneda,observaciones,codigo_producto,estado_match,precio_por_unidad,precio_por_medida_base)
+    tipo_compra,unidades_por_caja,cantidad_por_unidad,unidad_medida,precio_informado,moneda,observaciones,codigo_producto,estado_match,precio_por_unidad,precio_por_medida_base,user_id)
     VALUES (@fecha,@id_proveedor,@proveedor,@archivo_origen,@producto_original,@presentacion_original,
-    @tipo_compra,@unidades_por_caja,@cantidad_por_unidad,@unidad_medida,@precio_informado,@moneda,@observaciones,@codigo_producto,@estado_match,@precio_por_unidad,@precio_por_medida_base)`)
-  const insertMany = db.transaction((items) => items.forEach(i => stmt.run(i)))
+    @tipo_compra,@unidades_por_caja,@cantidad_por_unidad,@unidad_medida,@precio_informado,@moneda,@observaciones,@codigo_producto,@estado_match,@precio_por_unidad,@precio_por_medida_base,@user_id)`)
+  const uid = userId()
+  const insertMany = db.transaction((items) => items.forEach(i => stmt.run({ ...i, user_id: uid })))
   insertMany(rows)
   return true
 })
@@ -353,11 +453,12 @@ ipcMain.handle('listas:archiveByProveedor', (_, id_proveedor) => {
 
 // Equivalencias
 ipcMain.handle('equivalencias:getAll', () => {
-  return db.prepare('SELECT * FROM equivalencias ORDER BY id_proveedor').all()
+  if (isAdmin()) return db.prepare('SELECT * FROM equivalencias ORDER BY id_proveedor').all()
+  return db.prepare('SELECT * FROM equivalencias WHERE user_id = ? ORDER BY id_proveedor').all(userId())
 })
 ipcMain.handle('equivalencias:create', (_, e) => {
-  const stmt = db.prepare('INSERT INTO equivalencias (id_proveedor,producto_original,presentacion_original,codigo_producto,comentarios) VALUES (@id_proveedor,@producto_original,@presentacion_original,@codigo_producto,@comentarios)')
-  const r = stmt.run(e)
+  const stmt = db.prepare('INSERT INTO equivalencias (id_proveedor,producto_original,presentacion_original,codigo_producto,comentarios,user_id) VALUES (@id_proveedor,@producto_original,@presentacion_original,@codigo_producto,@comentarios,@user_id)')
+  const r = stmt.run({ ...e, user_id: userId() })
   return { id: r.lastInsertRowid, ...e }
 })
 ipcMain.handle('equivalencias:delete', (_, id) => {
@@ -388,6 +489,10 @@ ipcMain.handle('comparador:getComparativa', (_, filtros) => {
     WHERE l.codigo_producto IS NOT NULL AND l.estado_match = 'OK' AND l.activo = 1
   `
   const params = []
+  if (!isAdmin()) {
+    query += ' AND l.user_id = ?'
+    params.push(userId())
+  }
   if (filtros && filtros.categoria) {
     query += ' AND p.categoria = ?'
     params.push(filtros.categoria)
@@ -613,7 +718,10 @@ ipcMain.handle('dialog:saveFile', async (_, { defaultName }) => {
 
 // ─── Pedidos ──────────────────────────────────────────────────────────────────
 ipcMain.handle('pedidos:getAll', () => {
-  const pedidos = db.prepare('SELECT * FROM pedidos ORDER BY created_at DESC').all()
+  const q = isAdmin()
+    ? 'SELECT * FROM pedidos ORDER BY created_at DESC'
+    : 'SELECT * FROM pedidos WHERE user_id = ? ORDER BY created_at DESC'
+  const pedidos = isAdmin() ? db.prepare(q).all() : db.prepare(q).all(userId())
   return pedidos.map(p => ({
     ...p,
     items: db.prepare('SELECT * FROM pedido_items WHERE id_pedido = ?').all(p.id),
@@ -622,9 +730,9 @@ ipcMain.handle('pedidos:getAll', () => {
 
 ipcMain.handle('pedidos:create', (_, { pedido, items }) => {
   const r = db.prepare(`
-    INSERT INTO pedidos (fecha, restaurante, id_proveedor, proveedor, notas, total, estado, nro_orden)
-    VALUES (@fecha, @restaurante, @id_proveedor, @proveedor, @notas, @total, @estado, @nro_orden)
-  `).run(pedido)
+    INSERT INTO pedidos (fecha, restaurante, id_proveedor, proveedor, notas, total, estado, nro_orden, user_id)
+    VALUES (@fecha, @restaurante, @id_proveedor, @proveedor, @notas, @total, @estado, @nro_orden, @user_id)
+  `).run({ ...pedido, user_id: userId() })
   const id = r.lastInsertRowid
   const ins = db.prepare(`
     INSERT INTO pedido_items (id_pedido, codigo_producto, producto, cantidad, unidad, precio_unitario, subtotal)
@@ -993,11 +1101,21 @@ ipcMain.handle('backup:restore', async () => {
 
 app.whenReady().then(async () => {
   initDB()
+  JWT_SECRET = getJwtSecret()
 
   let port = null
   if (!isDev) {
     const distPath = path.join(__dirname, '../dist')
     port = await startLocalServer(distPath)
+  } else {
+    // En dev, también levantar Express para poder testear LAN
+    const createServerDev = require('./server')
+    const expressApp = createServerDev({ db, JWT_SECRET, distPath: null })
+    const LAN_PORT = 3001
+    expressApp.listen(LAN_PORT, '0.0.0.0', () => {
+      global.__lanPort = LAN_PORT
+      console.log(`[Express DEV] LAN server on 0.0.0.0:${LAN_PORT}`)
+    })
   }
 
   createWindow(port)
