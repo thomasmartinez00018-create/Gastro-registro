@@ -12,6 +12,7 @@ import SimuladorFactura from './components/SimuladorFactura'
 import LoginScreen      from './components/LoginScreen'
 import GeneradorLicencias from './components/GeneradorLicencias'
 import Vincular from './components/Vincular'
+import { QRCodeSVG } from 'qrcode.react'
 import Usuarios from './components/Usuarios'
 import AccesoRed from './components/AccesoRed'
 import ErrorBoundary from './components/ErrorBoundary'
@@ -110,6 +111,16 @@ function AppInner() {
   useEffect(() => { window._navigateTo = setPage }, [setPage])
 
   const { restaurantName } = appSettings
+
+  // Network info (solo en Electron)
+  const [lanUrl, setLanUrl] = useState(null)
+  const [showQr, setShowQr] = useState(false)
+  useEffect(() => {
+    if (!window.api?.network?.getInfo) return
+    window.api.network.getInfo().then(info => {
+      if (info?.url) setLanUrl(info.url)
+    }).catch(() => {})
+  }, [])
 
   // Sidebar colapsable
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
@@ -213,6 +224,49 @@ function AppInner() {
             <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>logout</span>
             Cerrar sesión
           </button>
+
+          {/* LAN access indicator */}
+          {lanUrl && (
+            <div style={{ position: 'relative' }}>
+              <button onClick={() => setShowQr(v => !v)} style={{
+                background: 'var(--surface-2)', border: '1px solid var(--border)',
+                borderRadius: 'var(--radius-sm)', padding: '5px 10px',
+                color: 'var(--text-muted)', fontSize: '10px', cursor: 'pointer',
+                display: 'flex', alignItems: 'center', gap: '6px', width: '100%',
+                fontFamily: 'inherit',
+              }}>
+                <span className="material-symbols-outlined" style={{ fontSize: '14px', color: 'var(--success)' }}>wifi</span>
+                <code style={{ fontSize: '10px', flex: 1, textAlign: 'left', color: 'var(--text)' }}>{lanUrl.replace('http://', '')}</code>
+                <span className="material-symbols-outlined" style={{ fontSize: '12px' }}>qr_code_2</span>
+              </button>
+
+              {/* QR popover */}
+              {showQr && (
+                <div style={{
+                  position: 'absolute', bottom: '100%', left: 0, marginBottom: '8px',
+                  background: 'var(--surface)', border: '1px solid var(--border)',
+                  borderRadius: 'var(--radius)', boxShadow: 'var(--shadow-xl)',
+                  padding: '16px', zIndex: 200, width: '220px',
+                  animation: 'slideModal var(--t-slow) var(--ease-spring)',
+                }}>
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{ background: '#fff', padding: '12px', borderRadius: 'var(--radius-sm)', display: 'inline-block', marginBottom: '8px' }}>
+                      <QRCodeSVG value={lanUrl} size={140} />
+                    </div>
+                    <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '4px' }}>Escaneá para conectarte</p>
+                    <code style={{ fontSize: '11px', color: 'var(--accent)', fontWeight: 600 }}>{lanUrl}</code>
+                  </div>
+                  <button onClick={() => setShowQr(false)} style={{
+                    position: 'absolute', top: '6px', right: '6px',
+                    background: 'none', border: 'none', color: 'var(--text-light)',
+                    cursor: 'pointer', padding: '2px',
+                  }}>
+                    <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>close</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </aside>
 
