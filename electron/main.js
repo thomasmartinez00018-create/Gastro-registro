@@ -25,13 +25,17 @@ const MIME = {
 const createServer = require('./server')
 
 function startLocalServer(distPath) {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const expressApp = createServer({ db, JWT_SECRET, distPath })
     const LAN_PORT = 3001
-    expressApp.listen(LAN_PORT, '0.0.0.0', () => {
+    const server = expressApp.listen(LAN_PORT, '0.0.0.0', () => {
       global.__lanPort = LAN_PORT
       console.log(`[Express] LAN server listening on 0.0.0.0:${LAN_PORT}`)
       resolve(LAN_PORT)
+    })
+    server.on('error', (err) => {
+      console.error('[Express] Error al iniciar servidor LAN:', err.message)
+      reject(err)
     })
   })
 }
@@ -791,12 +795,20 @@ function createWindow(port) {
 
   if (isDev) {
     win.loadURL('http://localhost:5173')
-  } else {
+  } else if (port) {
     win.loadURL(`http://localhost:${port}`)
+  } else {
+    // Fallback: Express no pudo iniciar — cargar directamente desde disco (sin LAN)
+    win.loadFile(path.join(__dirname, '../dist/index.html'))
   }
 
+  // Timeout de seguridad: si ready-to-show no dispara en 8s, mostrar igual
+  const showFallback = setTimeout(() => {
+    if (!win.isVisible()) win.show()
+  }, 8000)
+
   win.once('ready-to-show', () => {
-    // Restaurar zoom guardado antes de mostrar la ventana (sin flash)
+    clearTimeout(showFallback)
     const savedZoom = readSavedZoom()
     if (savedZoom !== 1.0) win.webContents.setZoomFactor(savedZoom)
     win.show()
@@ -1106,7 +1118,12 @@ app.whenReady().then(async () => {
   let port = null
   if (!isDev) {
     const distPath = path.join(__dirname, '../dist')
-    port = await startLocalServer(distPath)
+    try {
+      port = await startLocalServer(distPath)
+    } catch (err) {
+      console.error('[startup] Servidor LAN no pudo iniciar, abriendo sin acceso LAN:', err.message)
+      // port queda null → createWindow carga desde file://
+    }
   } else {
     // En dev, también levantar Express para poder testear LAN
     const createServerDev = require('./server')
