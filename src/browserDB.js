@@ -297,4 +297,69 @@ const pedidos = {
   },
 }
 
-export const browserDB = { productos, proveedores, listas, equivalencias, comparador, maxirest, dialog, file, pedidos }
+// ── Auth (dev mode — auto-login admin) ──────────────────────────────────────
+const auth = {
+  login: async ({ username, password }) => {
+    // En dev mode, aceptar admin/1234 sin backend
+    if (username === 'admin' && password === '1234') {
+      const user = { id: 1, username: 'admin', role: 'admin', display_name: 'Administrador' }
+      return { ok: true, token: 'dev-token-admin', user }
+    }
+    // Buscar en localStorage (para usuarios creados en dev)
+    const users = get('users')
+    const u = users.find(x => x.username === username && x.password === password && x.active !== 0)
+    if (u) {
+      const user = { id: u.id, username: u.username, role: u.role, display_name: u.display_name }
+      return { ok: true, token: `dev-token-${u.id}`, user }
+    }
+    return { ok: false, error: 'Usuario o contraseña incorrectos' }
+  },
+  validate: async (token) => {
+    if (token === 'dev-token-admin') return { ok: true, user: { id: 1, username: 'admin', role: 'admin', display_name: 'Administrador' } }
+    const m = token?.match(/^dev-token-(\d+)$/)
+    if (m) {
+      const u = get('users').find(x => x.id === Number(m[1]))
+      if (u) return { ok: true, user: { id: u.id, username: u.username, role: u.role, display_name: u.display_name } }
+    }
+    return { ok: false }
+  },
+  logout: async () => ({ ok: true }),
+}
+
+const users = {
+  getAll: async () => get('users'),
+  create: async (data) => {
+    const items = get('users')
+    const item = { id: nextId(items), ...data, active: 1, created_at: new Date().toISOString() }
+    items.push(item)
+    set('users', items)
+    return item
+  },
+  update: async (data) => {
+    const items = get('users').map(u => u.id === data.id ? { ...u, ...data } : u)
+    set('users', items)
+    return { ok: true }
+  },
+  delete: async (id) => {
+    const items = get('users').map(u => u.id === id ? { ...u, active: 0 } : u)
+    set('users', items)
+    return { ok: true }
+  },
+}
+
+const network = {
+  getInfo: async () => ({ addresses: [], port: null, url: null }),
+}
+
+const license = {
+  check: async () => ({ activated: true }),
+  activate: async () => ({ ok: true }),
+  deactivate: async () => ({ ok: true }),
+  generate: () => null,
+}
+
+const backup = { export: async () => null, restore: async () => null }
+const sync = { exportJSON: async () => null, importJSON: async () => null, pushToOPS: async () => null, pullFromOPS: async () => null }
+const app = { setZoom: () => {} }
+
+export const browserDB = { productos, proveedores, listas, equivalencias, comparador, maxirest, dialog, file, pedidos, auth, users, network, license, backup, sync, app }

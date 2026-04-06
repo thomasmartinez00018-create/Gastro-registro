@@ -127,13 +127,16 @@ function buildHttpApi() {
 // ── Selección del adapter ─────────────────────────────────────────────────
 let api
 
+// Detectar si estamos en Vite dev mode (HMR activo) vs LAN real (served por Express)
+const IS_VITE_DEV = import.meta.env?.DEV
+
 if (IS_ELECTRON) {
   api = window.api
-} else if (typeof window !== 'undefined' && window.location.protocol.startsWith('http')) {
-  // Running in browser via LAN server
+} else if (typeof window !== 'undefined' && window.location.protocol.startsWith('http') && !IS_VITE_DEV) {
+  // Running in browser via LAN server (production Express)
   api = buildHttpApi()
 } else {
-  // Dev fallback
+  // Dev fallback (Vite dev server) — usa browserDB con auth local
   api = browserDB
 }
 

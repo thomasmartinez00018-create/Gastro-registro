@@ -40,13 +40,19 @@ module.exports = function createServer({ db, JWT_SECRET, distPath }) {
 
   // ── Auth routes (no middleware) ────────────────────────────────────────────
   app.post('/api/auth/login', (req, res) => {
-    const { username, password } = req.body
-    const user = db.prepare('SELECT * FROM users WHERE username = ? AND active = 1').get(username)
-    if (!user || !bcrypt.compareSync(password, user.password_hash)) {
-      return res.json({ ok: false, error: 'Usuario o contraseña incorrectos' })
+    try {
+      const { username, password } = req.body || {}
+      if (!username || !password) return res.json({ ok: false, error: 'Usuario y contraseña requeridos' })
+      const user = db.prepare('SELECT * FROM users WHERE username = ? AND active = 1').get(username)
+      if (!user || !bcrypt.compareSync(password, user.password_hash)) {
+        return res.json({ ok: false, error: 'Usuario o contraseña incorrectos' })
+      }
+      const token = jwt.sign({ userId: user.id, role: user.role, username: user.username }, JWT_SECRET, { expiresIn: '30d' })
+      res.json({ ok: true, token, user: { id: user.id, username: user.username, role: user.role, display_name: user.display_name } })
+    } catch (err) {
+      console.error('[auth:login]', err)
+      res.status(500).json({ ok: false, error: 'Error interno del servidor: ' + err.message })
     }
-    const token = jwt.sign({ userId: user.id, role: user.role, username: user.username }, JWT_SECRET, { expiresIn: '30d' })
-    res.json({ ok: true, token, user: { id: user.id, username: user.username, role: user.role, display_name: user.display_name } })
   })
 
   app.post('/api/auth/validate', (req, res) => {
