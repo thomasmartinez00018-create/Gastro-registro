@@ -318,17 +318,77 @@ ipcMain.handle('users:delete', (_, id) => {
 })
 
 // ─── Network info ────────────────────────────────────────────────────────────
+
+// Palabras clave de adaptadores virtuales a excluir
+const VIRTUAL_IFACE_KEYWORDS = [
+  'virtualbox', 'vmware', 'vmnet', 'hyper-v', 'vethernet',
+  'docker', 'hamachi', 'loopback', 'pseudo', 'teredo', 'isatap', 'tunnel'
+]
+
+// Rangos de IP típicos de adaptadores virtuales
+function isVirtualIP(addr) {
+  if (addr.startsWith('172.')) return true       // Docker / Hyper-V
+  if (addr.startsWith('192.168.56.')) return true // VirtualBox default
+  if (addr.startsWith('192.168.99.')) return true // Docker Toolbox
+  if (addr.startsWith('169.254.')) return true    // APIPA (sin DHCP)
+  return false
+}
+
+// Score: mayor = más probable que sea la IP LAN real
+function ifaceScore(ifaceName, addr) {
+  const name = (ifaceName || '').toLowerCase()
+  if (VIRTUAL_IFACE_KEYWORDS.some(k => name.includes(k))) return -1
+  if (isVirtualIP(addr)) return -1
+  let score = 0
+  if (name.includes('wi-fi') || name.includes('wifi') || name.includes('wlan') || name.includes('wireless')) score += 10
+  if (name.includes('ethernet') || name.includes('local area') || name.includes('lan')) score += 8
+  if (addr.startsWith('192.168.')) score += 5
+  if (addr.startsWith('10.')) score += 4
+
+  return score
+}
+
 ipcMain.handle('network:getInfo', () => {
   const os = require('os')
   const interfaces = os.networkInterfaces()
-  const addresses = []
-  for (const iface of Object.values(interfaces)) {
+  const candidates = []
+
+  for (const [ifaceName, iface] of Object.entries(interfaces)) {
     for (const info of iface) {
-      if ((info.family === 'IPv4' || info.family === 4) && !info.internal) addresses.push(info.address)
+      if ((info.family === 'IPv4' || info.family === 4) && !info.internal) {
+        const score = ifaceScore(ifaceName, info.address)
+        if (score >= 0) candidates.push({ address: info.address, score, iface: ifaceName })
+      }
     }
   }
+
+  // Ordenar por score descendente
+  candidates.sort((a, b) => b.score - a.score)
+  const addresses = candidates.map(c => c.address)
   const port = global.__lanPort || 3001
   return { addresses, port, url: addresses.length ? `http://${addresses[0]}:${port}` : null }
+})
+
+// ─── Firewall Windows ─────────────────────────────────────────────────────────
+ipcMain.handle('network:openFirewall', async () => {
+  if (process.platform !== 'win32') return { ok: true, skipped: true }
+  const { exec } = require('child_process')
+  const port = global.__lanPort || 3001
+  const ruleName = `Gastronomic OS Puerto ${port}`
+  return new Promise((resolve) => {
+    // Primero chequear si ya existe la regla
+    exec(`netsh advfirewall firewall show rule name="${ruleName}"`, (err, stdout) => {
+      if (!err && stdout.includes(ruleName)) return resolve({ ok: true, already: true })
+      // Intentar agregar la regla (requiere admin — puede fallar si no hay privilegios)
+      exec(
+        `netsh advfirewall firewall add rule name="${ruleName}" dir=in action=allow protocol=TCP localport=${port}`,
+        (err2) => {
+          if (err2) resolve({ ok: false, error: err2.message })
+          else resolve({ ok: true, added: true })
+        }
+      )
+    })
+  })
 })
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
