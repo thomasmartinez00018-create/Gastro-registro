@@ -370,25 +370,86 @@ ipcMain.handle('network:getInfo', () => {
 })
 
 // ─── Firewall Windows ─────────────────────────────────────────────────────────
-ipcMain.handle('network:openFirewall', async () => {
-  if (process.platform !== 'win32') return { ok: true, skipped: true }
+
+// Chequear si la regla de firewall ya existe
+function firewallRuleExists(ruleName) {
+  const { execSync } = require('child_process')
+  try {
+    const out = execSync(`netsh advfirewall firewall show rule name="${ruleName}"`, { encoding: 'utf8', timeout: 5000 })
+    return out.includes(ruleName)
+  } catch {
+    return false
+  }
+}
+
+// Intentar agregar regla sin elevación (funciona si la app ya corre como admin)
+function firewallAddDirect(ruleName, port) {
+  const { execSync } = require('child_process')
+  try {
+    execSync(
+      `netsh advfirewall firewall add rule name="${ruleName}" dir=in action=allow protocol=TCP localport=${port} profile=any`,
+      { encoding: 'utf8', timeout: 5000 }
+    )
+    return true
+  } catch {
+    return false
+  }
+}
+
+// Agregar regla CON elevación UAC (muestra el popup de Windows pidiendo permiso)
+function firewallAddElevated(ruleName, port) {
   const { exec } = require('child_process')
-  const port = global.__lanPort || 3001
-  const ruleName = `Gastronomic OS Puerto ${port}`
   return new Promise((resolve) => {
-    // Primero chequear si ya existe la regla
-    exec(`netsh advfirewall firewall show rule name="${ruleName}"`, (err, stdout) => {
-      if (!err && stdout.includes(ruleName)) return resolve({ ok: true, already: true })
-      // Intentar agregar la regla (requiere admin — puede fallar si no hay privilegios)
-      exec(
-        `netsh advfirewall firewall add rule name="${ruleName}" dir=in action=allow protocol=TCP localport=${port}`,
-        (err2) => {
-          if (err2) resolve({ ok: false, error: err2.message })
-          else resolve({ ok: true, added: true })
-        }
-      )
+    const netshArgs = `advfirewall firewall add rule name=\\\"${ruleName}\\\" dir=in action=allow protocol=TCP localport=${port} profile=any`
+    const psCmd = `Start-Process -FilePath 'netsh' -ArgumentList '${netshArgs}' -Verb RunAs -Wait -WindowStyle Hidden`
+    exec(`powershell -Command "${psCmd}"`, { timeout: 30000 }, (err) => {
+      if (err) resolve({ ok: false, error: err.message })
+      else resolve({ ok: true, elevated: true })
     })
   })
+}
+
+// Función principal: abre el firewall de la forma que sea posible
+async function ensureFirewallOpen(port) {
+  if (process.platform !== 'win32') return { ok: true, skipped: true }
+
+  const ruleName = `Gastronomic OS Puerto ${port}`
+
+  // 1. ¿Ya existe la regla?
+  if (firewallRuleExists(ruleName)) {
+    console.log(`[Firewall] Regla "${ruleName}" ya existe`)
+    return { ok: true, already: true }
+  }
+
+  // 2. Intentar sin elevación (por si la app corre como admin)
+  if (firewallAddDirect(ruleName, port)) {
+    console.log(`[Firewall] Regla agregada sin elevación`)
+    return { ok: true, added: true }
+  }
+
+  // 3. Pedir elevación UAC (popup de Windows)
+  console.log(`[Firewall] Pidiendo elevación UAC para abrir puerto ${port}...`)
+  const result = await firewallAddElevated(ruleName, port)
+  if (result.ok) {
+    console.log(`[Firewall] Regla agregada con elevación UAC`)
+  } else {
+    console.error(`[Firewall] No se pudo agregar la regla:`, result.error)
+  }
+  return result
+}
+
+// Guardar estado del firewall para mostrarlo en la UI
+global.__firewallStatus = null
+
+ipcMain.handle('network:openFirewall', async () => {
+  const port = global.__lanPort || 3001
+  const result = await ensureFirewallOpen(port)
+  global.__firewallStatus = result
+  return result
+})
+
+ipcMain.handle('network:firewallStatus', () => {
+  return global.__firewallStatus
 })
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -1190,6 +1251,14 @@ app.whenReady().then(async () => {
     const distPath = path.join(__dirname, '../dist')
     try {
       port = await startLocalServer(distPath)
+      // Abrir firewall automáticamente en Windows (no bloquea la app)
+      ensureFirewallOpen(port).then(res => {
+        global.__firewallStatus = res
+        console.log('[startup] Firewall result:', JSON.stringify(res))
+      }).catch(err => {
+        console.error('[startup] Firewall check failed:', err.message)
+        global.__firewallStatus = { ok: false, error: err.message }
+      })
     } catch (err) {
       console.error('[startup] Servidor LAN no pudo iniciar, abriendo sin acceso LAN:', err.message)
       // port queda null → createWindow carga desde file://

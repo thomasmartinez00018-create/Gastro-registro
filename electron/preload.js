@@ -95,7 +95,8 @@ contextBridge.exposeInMainWorld('api', {
   },
   // Network
   network: {
-    getInfo:     () => ipcRenderer.invoke('network:getInfo'),
-    openFirewall: () => ipcRenderer.invoke('network:openFirewall'),
+    getInfo:        () => ipcRenderer.invoke('network:getInfo'),
+    openFirewall:   () => ipcRenderer.invoke('network:openFirewall'),
+    firewallStatus: () => ipcRenderer.invoke('network:firewallStatus'),
   },
 })
