@@ -38,6 +38,16 @@ module.exports = function createServer({ db, JWT_SECRET, distPath }) {
     next()
   }
 
+  // ── Health check (sin auth — para diagnóstico LAN) ───────────────────────
+  app.get('/ping', (req, res) => {
+    res.json({
+      ok: true,
+      server: 'Gastronomic OS',
+      time: new Date().toISOString(),
+      from: req.ip || req.socket?.remoteAddress,
+    })
+  })
+
   // ── Auth routes (no middleware) ────────────────────────────────────────────
   app.post('/api/auth/login', (req, res) => {
     try {

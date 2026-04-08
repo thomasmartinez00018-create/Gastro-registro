@@ -9,6 +9,8 @@ export default function AccesoRed() {
   const [fwStatus, setFwStatus]       = useState(null)   // null | object
   const [fwLoading, setFwLoading]     = useState(false)
   const [troubleOpen, setTroubleOpen] = useState(false)
+  const [pingStatus, setPingStatus]   = useState(null)   // null | 'testing' | 'ok' | 'fail'
+  const [pingDetail, setPingDetail]   = useState(null)
   const isWindows                     = navigator.userAgent.includes('Windows')
 
   useEffect(() => {
@@ -29,6 +31,34 @@ export default function AccesoRed() {
 
   const activeUrl = info && selectedIP ? `http://${selectedIP}:${info.port}` : info?.url
   const fwOk = fwStatus?.ok === true
+
+  async function handlePingTest() {
+    if (!activeUrl) return
+    setPingStatus('testing')
+    setPingDetail(null)
+    const pingUrl = `${activeUrl}/ping`
+    try {
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), 5000)
+      const res = await fetch(pingUrl, { signal: controller.signal })
+      clearTimeout(timeout)
+      if (res.ok) {
+        const data = await res.json()
+        setPingStatus('ok')
+        setPingDetail(`Servidor responde OK · ${data.time ? new Date(data.time).toLocaleTimeString() : ''}`)
+      } else {
+        setPingStatus('fail')
+        setPingDetail(`HTTP ${res.status} — el servidor responde pero con error`)
+      }
+    } catch (err) {
+      setPingStatus('fail')
+      if (err.name === 'AbortError') {
+        setPingDetail(`Timeout: el servidor no respondió en 5 segundos. Probá abrir el puerto en Firewall o ejecutar como Administrador.`)
+      } else {
+        setPingDetail(`No se pudo conectar: ${err.message}`)
+      }
+    }
+  }
 
   async function handleOpenFirewall() {
     if (!api.network?.openFirewall) return
@@ -128,6 +158,45 @@ export default function AccesoRed() {
                 </div>
               </div>
             )}
+
+            {/* Test de conectividad */}
+            <div className="card" style={{ borderLeft: `3px solid ${pingStatus === 'ok' ? 'var(--success)' : pingStatus === 'fail' ? 'var(--danger)' : 'var(--border)'}` }}>
+              <div className="card-body" style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                <span className="material-symbols-outlined" style={{
+                  fontSize: '20px', flexShrink: 0,
+                  color: pingStatus === 'ok' ? 'var(--success)' : pingStatus === 'fail' ? 'var(--danger)' : 'var(--text-muted)'
+                }}>
+                  {pingStatus === 'ok' ? 'check_circle' : pingStatus === 'fail' ? 'error' : 'network_check'}
+                </span>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 600, fontSize: '13px', marginBottom: pingDetail ? '4px' : 0 }}>
+                    {pingStatus === 'testing' ? 'Probando conexion...' :
+                     pingStatus === 'ok' ? 'Servidor accesible desde esta PC' :
+                     pingStatus === 'fail' ? 'No se pudo conectar al servidor' :
+                     'Probar si el servidor responde'}
+                  </div>
+                  {pingDetail && (
+                    <div style={{ fontSize: '12px', color: pingStatus === 'fail' ? 'var(--danger)' : 'var(--text-muted)' }}>
+                      {pingDetail}
+                    </div>
+                  )}
+                </div>
+                <button
+                  className="btn btn-sm btn-ghost"
+                  onClick={handlePingTest}
+                  disabled={pingStatus === 'testing' || !activeUrl}
+                  style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}
+                >
+                  <span className="material-symbols-outlined" style={{
+                    fontSize: '16px',
+                    animation: pingStatus === 'testing' ? 'spin 1s linear infinite' : 'none'
+                  }}>
+                    {pingStatus === 'testing' ? 'autorenew' : 'refresh'}
+                  </span>
+                  {pingStatus ? 'Volver a probar' : 'Probar ahora'}
+                </button>
+              </div>
+            </div>
 
             {/* Selector de IP si hay multiples */}
             {info.addresses.length > 1 && (

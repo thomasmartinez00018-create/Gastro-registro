@@ -409,21 +409,49 @@ function firewallAddElevated(ruleName, port) {
   })
 }
 
+// Verificar si la regla existente ya tiene profile=any
+function firewallRuleHasAnyProfile(ruleName) {
+  const { execSync } = require('child_process')
+  try {
+    const out = execSync(`netsh advfirewall firewall show rule name="${ruleName}" verbose`, { encoding: 'utf8', timeout: 5000 })
+    // Si la salida no dice "Profiles: Any" la regla puede estar limitada
+    return out.toLowerCase().includes('profiles:') && out.toLowerCase().includes('any')
+  } catch {
+    return false
+  }
+}
+
+// Borrar regla existente para reemplazarla con profile=any
+function firewallDeleteRule(ruleName) {
+  const { execSync } = require('child_process')
+  try {
+    execSync(`netsh advfirewall firewall delete rule name="${ruleName}"`, { encoding: 'utf8', timeout: 5000 })
+    return true
+  } catch {
+    return false
+  }
+}
+
 // Función principal: abre el firewall de la forma que sea posible
 async function ensureFirewallOpen(port) {
   if (process.platform !== 'win32') return { ok: true, skipped: true }
 
   const ruleName = `Gastronomic OS Puerto ${port}`
 
-  // 1. ¿Ya existe la regla?
+  // 1. ¿Existe la regla con profile=any? Si es así, listo
   if (firewallRuleExists(ruleName)) {
-    console.log(`[Firewall] Regla "${ruleName}" ya existe`)
-    return { ok: true, already: true }
+    if (firewallRuleHasAnyProfile(ruleName)) {
+      console.log(`[Firewall] Regla "${ruleName}" ya existe con profile=any`)
+      return { ok: true, already: true }
+    }
+    // Existe pero sin profile=any — borrar y recriar
+    console.log(`[Firewall] Regla existe pero sin profile=any, actualizando...`)
+    firewallDeleteRule(ruleName)
   }
 
   // 2. Intentar sin elevación (por si la app corre como admin)
   if (firewallAddDirect(ruleName, port)) {
-    console.log(`[Firewall] Regla agregada sin elevación`)
+    console.log(`[Firewall] Regla agregada sin elevación (profile=any)`)
     return { ok: true, added: true }
   }
 
@@ -431,7 +459,7 @@ async function ensureFirewallOpen(port) {
   console.log(`[Firewall] Pidiendo elevación UAC para abrir puerto ${port}...`)
   const result = await firewallAddElevated(ruleName, port)
   if (result.ok) {
-    console.log(`[Firewall] Regla agregada con elevación UAC`)
+    console.log(`[Firewall] Regla agregada con elevación UAC (profile=any)`)
   } else {
     console.error(`[Firewall] No se pudo agregar la regla:`, result.error)
   }
