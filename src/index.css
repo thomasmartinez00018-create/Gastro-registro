@@ -72,7 +72,13 @@
 }
 
 /* ── Base ─────────────────────────────────────────────────────────────────── */
-html { font-size: 14px; -webkit-font-smoothing: antialiased; }
+html {
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  touch-action: manipulation;
+}
 
 body {
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
@@ -81,6 +87,13 @@ body {
   font-size: 13.5px;
   line-height: 1.6;
   letter-spacing: -.01em;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: none;
+}
+
+/* Evita el highlight gris de tap en mobile */
+button, a, [role="button"], .nav-item, .chip, .badge {
+  -webkit-tap-highlight-color: transparent;
 }
 
 h1, h2, h3, h4, h5 { color: var(--text); }
@@ -1077,32 +1090,40 @@ tbody tr:last-child td { border-bottom: none; }
 .mobile-menu-btn {
   display: none;
   position: fixed;
-  top: 12px;
-  left: 12px;
+  top: calc(12px + env(safe-area-inset-top));
+  left: calc(12px + env(safe-area-inset-left));
   z-index: 200;
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
   border-radius: var(--radius-sm);
-  background: var(--surface);
+  background: rgba(30,32,35,0.92);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
   border: 1px solid var(--border);
   color: var(--text);
   cursor: pointer;
   align-items: center;
   justify-content: center;
   box-shadow: var(--shadow-md);
+  transition: transform var(--t-fast) var(--ease), background var(--t-fast) var(--ease);
 }
-.mobile-menu-btn .material-symbols-outlined { font-size: 22px; }
+.mobile-menu-btn:active { transform: scale(0.94); }
+.mobile-menu-btn .material-symbols-outlined { font-size: 24px; }
 
 /* Overlay detrás del sidebar en mobile */
 .sidebar-overlay {
   display: none;
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,0.6);
+  background: rgba(0,0,0,0.65);
   z-index: 90;
+  animation: fadeOverlay var(--t-base) var(--ease);
 }
 
 @media (max-width: 768px) {
+  /* App layout debe respetar safe area */
+  .app-layout { height: 100dvh; }
+
   /* Hamburger visible */
   .mobile-menu-btn { display: flex; }
 
@@ -1115,16 +1136,18 @@ tbody tr:last-child td { border-bottom: none; }
     z-index: 100;
     transform: translateX(-100%);
     transition: transform var(--t-slow) var(--ease);
-    width: 280px;
-    min-width: 280px;
+    width: min(84vw, 310px);
+    min-width: min(84vw, 310px);
     box-shadow: var(--shadow-xl);
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
   }
   .sidebar.mobile-open {
     transform: translateX(0);
   }
   .sidebar.collapsed {
-    width: 280px;
-    min-width: 280px;
+    width: min(84vw, 310px);
+    min-width: min(84vw, 310px);
     transform: translateX(-100%);
   }
   .sidebar.collapsed.mobile-open {
@@ -1138,9 +1161,17 @@ tbody tr:last-child td { border-bottom: none; }
   .sidebar.collapsed .nav-section-title,
   .sidebar.collapsed .nav-item span,
   .sidebar.collapsed .sidebar-footer-text { opacity: 1; width: auto; }
-  .sidebar.collapsed .nav-item { justify-content: flex-start; padding: 9px 12px; border-left: 3px solid transparent; }
+  .sidebar.collapsed .nav-item { justify-content: flex-start; padding: 12px 16px; border-left: 3px solid transparent; }
   .sidebar.collapsed .sidebar-logo { padding: 24px 20px 20px; }
   .sidebar.collapsed .sidebar-footer { justify-content: flex-start; padding: 14px 16px; }
+
+  /* Nav items más touch-friendly en mobile */
+  .nav-item { padding: 12px 16px; font-size: 14px; min-height: 44px; }
+  .nav-section-title { padding: 14px 16px 6px; font-size: 10px; }
+  /* Padding extra a la izquierda para no quedar debajo del botón hamburger (X) */
+  .sidebar-logo { padding: 24px 20px 18px 68px; }
+  .sidebar-logo-title { font-size: 15px; }
+  .sidebar.collapsed .sidebar-logo { padding: 24px 20px 18px 68px; }
 
   /* Overlay visible cuando sidebar abierto */
   .sidebar-overlay.visible { display: block; }
@@ -1148,42 +1179,174 @@ tbody tr:last-child td { border-bottom: none; }
   /* Content shell ocupa todo */
   .content-shell { width: 100%; }
 
-  /* Page header responsive */
+  /* Page header responsive — respeta safe area y deja espacio al hamburger */
   .page-header {
-    padding: 60px 16px 14px;
+    padding: calc(16px + env(safe-area-inset-top)) 14px 14px 68px;
     flex-direction: column;
-    align-items: flex-start;
-    gap: 10px;
+    align-items: stretch;
+    gap: 12px;
   }
-  .page-header h2 { font-size: 18px; }
+  .page-header h2, .page-title { font-size: 19px; }
+  .page-header p, .page-subtitle { font-size: 12px; }
+  /* Botones del header: que se envuelvan y ocupen ancho completo */
+  .page-header > div:last-child {
+    display: flex !important;
+    flex-wrap: wrap;
+    gap: 8px !important;
+    width: 100%;
+  }
+  .page-header > div:last-child > .btn {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
 
-  /* Page body padding reducido */
-  .page-body { padding: 16px; }
+  /* Filter cards inline: wrap inputs/selects */
+  .card-body[style*="display: flex"],
+  .card-body[style*="display:flex"] {
+    flex-wrap: wrap;
+    gap: 10px !important;
+  }
+  .card-body[style*="display: flex"] > .search-bar,
+  .card-body[style*="display: flex"] > .form-input,
+  .card-body[style*="display: flex"] > .form-select {
+    flex: 1 1 100% !important;
+    width: 100% !important;
+    min-width: 0;
+  }
 
-  /* Stats grid: 2 columnas */
-  .stats-grid { grid-template-columns: repeat(2, 1fr) !important; gap: 10px; }
+  /* Page body padding reducido + safe area bottom */
+  .page-body {
+    padding: 16px 14px calc(24px + env(safe-area-inset-bottom));
+  }
+
+  /* Stats grid: 2 columnas compactas */
+  .stats-grid { grid-template-columns: repeat(2, 1fr) !important; gap: 10px; margin-bottom: 14px; }
+  .stat-card { padding: 14px; }
+  .stat-number { font-size: 24px; }
+  .stat-label { font-size: 10.5px; }
 
   /* Bento grid: 1 columna */
-  .bento-grid { grid-template-columns: 1fr !important; }
+  .bento-grid { grid-template-columns: 1fr !important; gap: 14px; }
   .bento-span-4, .bento-span-5, .bento-span-6,
   .bento-span-7, .bento-span-8, .bento-span-12 { grid-column: span 1; }
+  .bento-card { padding: 18px; border-radius: var(--radius); }
 
   /* Form rows: 1 columna */
   .form-row-2, .form-row-3 { grid-template-columns: 1fr !important; }
 
-  /* Modals: full width */
-  .modal { width: 96vw; max-width: 96vw; }
-  .modal-lg, .modal-xl { width: 98vw; max-width: 98vw; }
+  /* Inputs — font-size 16px para evitar zoom automático en iOS */
+  .form-input, .form-select, .form-textarea {
+    font-size: 16px;
+    padding: 12px 14px;
+    min-height: 44px;
+  }
+  .form-label { font-size: 11px; margin-bottom: 6px; }
+
+  /* Modal como bottom-sheet — más natural en mobile */
+  .modal-overlay { align-items: flex-end; padding: 0; }
+  .modal, .modal-lg, .modal-xl {
+    width: 100% !important;
+    max-width: 100% !important;
+    max-height: 92dvh;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    animation: slideSheet var(--t-slow) var(--ease-spring);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .modal-header { padding: 16px 18px; position: sticky; top: 0; z-index: 2; }
+  .modal-header h3 { font-size: 15px; }
+  .modal-body { padding: 16px 18px; -webkit-overflow-scrolling: touch; }
+  .modal-footer {
+    padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+    position: sticky; bottom: 0; z-index: 2;
+    flex-wrap: wrap-reverse;
+  }
+  .modal-footer .btn { flex: 1 1 auto; min-width: 120px; }
 
   /* Cards: menos padding */
+  .card { border-radius: var(--radius); }
   .card-body { padding: 14px 16px; }
-  .card-header { padding: 12px 16px; }
+  .card-header { padding: 13px 16px; }
+  .card-header h3 { font-size: 13px; }
 
-  /* Botones: más touch-friendly */
-  .btn { padding: 10px 16px; font-size: 14px; }
-  .btn-sm { padding: 8px 14px; font-size: 13px; }
+  /* Botones: más touch-friendly (mín. 44px alto) */
+  .btn {
+    padding: 11px 18px;
+    font-size: 14px;
+    min-height: 44px;
+  }
+  .btn-sm { padding: 9px 14px; font-size: 13px; min-height: 38px; }
+  .btn-xs { padding: 6px 10px; font-size: 11px; min-height: 30px; }
+  .btn .material-symbols-outlined { font-size: 18px; }
 
-  /* Tablas: scroll horizontal */
-  .table-wrapper { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-  td, th { padding: 10px 12px; font-size: 12px; white-space: nowrap; }
+  /* Tablas: scroll horizontal suave + edge fade */
+  .table-wrapper {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    border-radius: var(--radius);
+    margin: 0 -2px;
+  }
+  .table-wrapper::-webkit-scrollbar { height: 3px; }
+  td, th { padding: 11px 14px; font-size: 12.5px; white-space: nowrap; }
+  th { font-size: 10px; }
+  tbody tr:active { background: var(--surface-2); }
+
+  /* Search bar — hit target grande */
+  .search-bar input { padding-left: 38px; min-height: 44px; font-size: 16px; }
+  .search-bar .material-symbols-outlined { font-size: 20px; }
+
+  /* Chips: más táctiles */
+  .chip { padding: 7px 14px; font-size: 12px; min-height: 32px; }
+
+  /* Alerts: full width sin márgenes raros */
+  .alert { font-size: 13px; padding: 12px 14px; }
+
+  /* Top bar oculta elementos decorativos */
+  .top-bar { display: none; }
+
+  /* Empty state más compacto */
+  .empty-state { padding: 40px 16px; }
+  .empty-state .icon { font-size: 44px; }
+
+  /* Upload zone más compacto */
+  .upload-zone { padding: 24px 16px; }
+}
+
+/* LoginScreen mobile */
+@media (max-width: 480px) {
+  .login-card {
+    padding: 32px 24px !important;
+    width: 100% !important;
+  }
+}
+
+/* Pantallas muy chicas (iPhone SE, etc.) */
+@media (max-width: 380px) {
+  .page-header { padding-left: 64px; padding-right: 12px; }
+  .page-header h2, .page-title { font-size: 17px; }
+  .page-body { padding: 14px 12px calc(20px + env(safe-area-inset-bottom)); }
+  .stats-grid { gap: 8px; }
+  .stat-card { padding: 12px; }
+  .stat-number { font-size: 22px; }
+  .btn { padding: 10px 14px; font-size: 13.5px; }
+  .card-body { padding: 14px; }
+  .card-header { padding: 12px 14px; }
+}
+
+/* Animación bottom-sheet */
+@keyframes slideSheet {
+  from { opacity: 0; transform: translateY(100%); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Desactiva hover transforms en touch devices — evita sticky :hover */
+@media (hover: none) {
+  .btn:hover:not(:disabled),
+  .bento-card:hover,
+  .stat-card:hover,
+  .card:hover,
+  tbody tr:hover {
+    transform: none !important;
+    box-shadow: var(--shadow) !important;
+  }
+  tbody tr:hover { background: transparent; }
 }

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import api from '../api'
+import { useAuth } from '../AuthContext'
 
 // ─── Temas ────────────────────────────────────────────────────────────────────
 export const THEMES = {
@@ -121,6 +122,7 @@ function saveAppSettings(settings) {
 
 // ─── Componente ───────────────────────────────────────────────────────────────
 export default function Configuracion() {
+  const { isAdmin } = useAuth()
   const [restaurantName, setRestaurantName] = useState('')
   const [logoBase64, setLogoBase64]         = useState('')
   const [theme, setTheme]                   = useState('gastronomica')
@@ -411,7 +413,8 @@ export default function Configuracion() {
           </div>
         </div>
 
-        {/* ── Card: Backup / Restore ────────────────────────────────────────── */}
+        {/* ── Card: Backup / Restore (admin-only) ─────────────────────────── */}
+        {isAdmin && (
         <div className="card" style={{ marginBottom: '20px' }}>
           <div className="card-header">
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -481,6 +484,7 @@ export default function Configuracion() {
             </div>
           </div>
         </div>
+        )}
 
         {/* ── Card: Datos locales ───────────────────────────────────────────── */}
         <div className="card">

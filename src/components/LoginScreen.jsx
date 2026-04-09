@@ -24,11 +24,13 @@ export default function LoginScreen() {
   }
 
   return (
-    <div style={{
+    <div className="login-screen" style={{
       position: 'fixed', inset: 0,
       background: 'var(--bg)',
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       fontFamily: "'Inter', system-ui, sans-serif",
+      padding: 'max(20px, env(safe-area-inset-top)) 20px max(20px, env(safe-area-inset-bottom))',
+      overflowY: 'auto',
     }}>
       {/* Glow decorativo */}
       <div style={{
@@ -38,14 +40,14 @@ export default function LoginScreen() {
         opacity: 0.4, pointerEvents: 'none',
       }} />
 
-      <form onSubmit={handleSubmit} style={{
+      <form onSubmit={handleSubmit} className="login-card" style={{
         background: 'var(--surface)',
         border: '1px solid var(--border)',
         borderRadius: 'var(--radius-lg)',
         boxShadow: 'var(--shadow-xl)',
         padding: '40px 36px',
         width: '380px',
-        maxWidth: '92vw',
+        maxWidth: '100%',
         position: 'relative',
         zIndex: 1,
         animation: 'slideModal var(--t-slow) var(--ease-spring)',

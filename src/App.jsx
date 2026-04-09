@@ -28,7 +28,8 @@ function buildSections(isAdmin) {
         { id: 'dashboard',     label: 'Dashboard',        icon: 'dashboard'      },
         { id: 'configuracion', label: 'Configuración',    icon: 'settings'       },
         ...(isAdmin ? [{ id: 'usuarios', label: 'Usuarios', icon: 'group' }] : []),
-        ...(IS_ELECTRON ? [{ id: 'acceso_red', label: 'Acceso Red', icon: 'wifi' }] : []),
+        // Acceso Red es una herramienta admin (info de red/servidor LAN)
+        ...(isAdmin && IS_ELECTRON ? [{ id: 'acceso_red', label: 'Acceso Red', icon: 'wifi' }] : []),
       ]
     },
     {
@@ -52,12 +53,13 @@ function buildSections(isAdmin) {
         { id: 'simulador',     label: 'Pedidos',           icon: 'receipt_long'   },
       ]
     },
-    {
+    // Integración con sistema externo — admin-only
+    ...(isAdmin ? [{
       title: 'Integración',
       items: [
         { id: 'vincular',      label: 'Vincular OPS',      icon: 'link'           },
       ]
-    },
+    }] : []),
     ...( IS_DEV ? [{
       title: 'Desarrollador',
       items: [{ id: 'licencias', label: 'Generar Licencias', icon: 'key' }],
@@ -81,11 +83,18 @@ const PAGES = {
   acceso_red:    AccesoRed,
 }
 
+const ADMIN_ONLY_PAGES = new Set(['usuarios', 'acceso_red', 'vincular', 'licencias'])
+
 function AppInner() {
   const [page, setPage] = useState('dashboard')
   const { job } = useImport()
   const { user, logout, isAdmin, loading: authLoading } = useAuth()
-  const Page = PAGES[page] || Dashboard
+  // Si un no-admin queda en una página admin-only (por estado residual), redirigir a dashboard
+  useEffect(() => {
+    if (!isAdmin && ADMIN_ONLY_PAGES.has(page)) setPage('dashboard')
+  }, [isAdmin, page])
+  const effectivePage = (!isAdmin && ADMIN_ONLY_PAGES.has(page)) ? 'dashboard' : page
+  const Page = PAGES[effectivePage] || Dashboard
 
   // Personalización
   const [appSettings, setAppSettings] = useState({ restaurantName: '', logoBase64: '', theme: 'gastronomica' })
@@ -112,15 +121,16 @@ function AppInner() {
 
   const { restaurantName } = appSettings
 
-  // Network info (solo en Electron)
-  const [lanUrl, setLanUrl] = useState(IS_DEV ? 'http://192.168.1.5:3001' : null)
+  // Network info (solo admin en Electron)
+  const [lanUrl, setLanUrl] = useState(IS_DEV && isAdmin ? 'http://192.168.1.5:3001' : null)
   const [showQr, setShowQr] = useState(false)
   useEffect(() => {
+    if (!isAdmin) { setLanUrl(null); return }
     if (!window.api?.network?.getInfo) return
     window.api.network.getInfo().then(info => {
       if (info?.url) setLanUrl(info.url)
     }).catch(() => {})
-  }, [])
+  }, [isAdmin])
 
   // Sidebar colapsable
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
@@ -181,11 +191,11 @@ function AppInner() {
             <div key={section.title}>
               <div className="nav-section-title">{section.title}</div>
               {section.items.map(item => {
-                const isImportando = item.id === 'importar' && job.aiProcessing && page !== 'importar'
+                const isImportando = item.id === 'importar' && job.aiProcessing && effectivePage !== 'importar'
                 return (
                   <button
                     key={item.id}
-                    className={`nav-item ${page === item.id ? 'active' : ''}`}
+                    className={`nav-item ${effectivePage === item.id ? 'active' : ''}`}
                     onClick={() => { setPage(item.id); closeMobile() }}
                   >
                     <span className="icon">
@@ -275,7 +285,7 @@ function AppInner() {
 
         {/* Contenido de la página */}
         <main className="main-content">
-          <ErrorBoundary key={page}>
+          <ErrorBoundary key={effectivePage}>
             <Page onNavigate={setPage} />
           </ErrorBoundary>
         </main>
