@@ -129,8 +129,66 @@ export default function AccesoRed() {
             <span className="material-symbols-outlined" style={{ animation: 'spin 1s linear infinite', fontSize: '32px', color: 'var(--accent)' }}>autorenew</span>
           </div>
         ) : !info?.url ? (
-          <div className="alert alert-warning">
-            No se detecto una conexion de red local. Asegurate de estar conectado a WiFi o Ethernet.
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <div className="alert alert-warning">
+              <strong>No se pudo determinar la IP LAN automaticamente.</strong><br/>
+              Estado del servidor: <strong>{info?.serverRunning ? 'activo' : 'NO activo'}</strong> · Puerto: <strong>{info?.port || 'N/A'}</strong>
+            </div>
+
+            {/* Mostrar TODAS las interfaces raw como fallback */}
+            {info?.allInterfaces?.length > 0 && (
+              <div className="card">
+                <div className="card-header"><h3>Interfaces de red detectadas</h3></div>
+                <div className="card-body">
+                  <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '12px' }}>
+                    Elegi manualmente la IP que corresponde a tu WiFi/Ethernet:
+                  </p>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {info.allInterfaces.map((iface, i) => {
+                      const scored = info.scoredCandidates?.find(c => c.address === iface.address && c.iface === iface.iface)
+                      return (
+                        <button
+                          key={i}
+                          className="btn btn-ghost"
+                          onClick={() => {
+                            setSelectedIP(iface.address)
+                            // Forzar que info tenga url usando esta IP
+                            setInfo({ ...info, url: `http://${iface.address}:${info.port}`, addresses: [iface.address, ...(info.addresses || [])] })
+                          }}
+                          style={{
+                            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                            padding: '10px 14px', textAlign: 'left',
+                          }}
+                        >
+                          <div>
+                            <div style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: '14px' }}>{iface.address}</div>
+                            <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{iface.iface}</div>
+                          </div>
+                          {scored && (
+                            <span style={{
+                              fontSize: '10px', padding: '2px 8px', borderRadius: '10px',
+                              background: scored.score >= 10 ? 'var(--success)' : scored.score >= 0 ? 'var(--warning, #f59e0b)' : 'var(--danger)',
+                              color: '#000', fontWeight: 700,
+                            }}>
+                              score {scored.score}
+                            </span>
+                          )}
+                        </button>
+                      )
+                    })}
+                  </div>
+                  <div style={{ fontSize: '11px', color: 'var(--text-light)', marginTop: '12px' }}>
+                    La IP correcta suele empezar con <strong>192.168.</strong> · <strong>10.</strong> · o <strong>172.16-31.</strong>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {(!info?.allInterfaces || info.allInterfaces.length === 0) && (
+              <div className="alert alert-danger">
+                No se detectaron interfaces de red en absoluto. Verifica que estes conectado a WiFi o cable Ethernet.
+              </div>
+            )}
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', maxWidth: '820px' }}>

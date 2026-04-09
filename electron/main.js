@@ -346,31 +346,42 @@ ipcMain.handle('users:delete', (_, id) => {
 
 // ─── Network info ────────────────────────────────────────────────────────────
 
-// Palabras clave de adaptadores virtuales a excluir
+// Palabras clave de adaptadores claramente virtuales
 const VIRTUAL_IFACE_KEYWORDS = [
   'virtualbox', 'vmware', 'vmnet', 'hyper-v', 'vethernet',
-  'docker', 'hamachi', 'loopback', 'pseudo', 'teredo', 'isatap', 'tunnel'
+  'docker', 'hamachi', 'pseudo', 'teredo', 'isatap', 'tunnel',
+  'loopback pseudo', 'tailscale', 'zerotier', 'wireguard'
 ]
 
-// Rangos de IP típicos de adaptadores virtuales
-function isVirtualIP(addr) {
-  if (addr.startsWith('172.')) return true       // Docker / Hyper-V
-  if (addr.startsWith('192.168.56.')) return true // VirtualBox default
-  if (addr.startsWith('192.168.99.')) return true // Docker Toolbox
-  if (addr.startsWith('169.254.')) return true    // APIPA (sin DHCP)
-  return false
+// Penalty score: cuánto bajar el score si la IP parece virtual
+// NO excluimos de plano — solo penalizamos
+function ipPenalty(addr) {
+  if (addr.startsWith('192.168.56.')) return 100  // VirtualBox default
+  if (addr.startsWith('192.168.99.')) return 100  // Docker Toolbox
+  if (addr.startsWith('169.254.'))    return 100  // APIPA (sin DHCP) — inservible
+  // 172.17-172.31 se usa por Docker/Hyper-V Y por routers reales
+  // No penalizar, dejar que el score del iface decida
+  return 0
 }
 
 // Score: mayor = más probable que sea la IP LAN real
 function ifaceScore(ifaceName, addr) {
   const name = (ifaceName || '').toLowerCase()
-  if (VIRTUAL_IFACE_KEYWORDS.some(k => name.includes(k))) return -1
-  if (isVirtualIP(addr)) return -1
-  let score = 0
-  if (name.includes('wi-fi') || name.includes('wifi') || name.includes('wlan') || name.includes('wireless')) score += 10
-  if (name.includes('ethernet') || name.includes('local area') || name.includes('lan')) score += 8
-  if (addr.startsWith('192.168.')) score += 5
-  if (addr.startsWith('10.')) score += 4
+  let score = 5  // base score — nunca excluir de plano
+
+  if (VIRTUAL_IFACE_KEYWORDS.some(k => name.includes(k))) score -= 50
+  score -= ipPenalty(addr)
+
+  if (name.includes('wi-fi') || name.includes('wifi') || name.includes('wlan') || name.includes('wireless')) score += 20
+  if (name.includes('ethernet') || name.includes('local area') || name.includes('lan')) score += 15
+
+  if (addr.startsWith('192.168.')) score += 10
+  if (addr.startsWith('10.')) score += 8
+  // 172.16.0.0 - 172.31.255.255 es rango privado VÁLIDO
+  if (addr.startsWith('172.')) {
+    const second = parseInt(addr.split('.')[1] || '0', 10)
+    if (second >= 16 && second <= 31) score += 6
+  }
 
   return score
 }
@@ -379,18 +390,25 @@ ipcMain.handle('network:getInfo', () => {
   const os = require('os')
   const interfaces = os.networkInterfaces()
   const candidates = []
+  const allRaw = []
 
-  for (const [ifaceName, iface] of Object.entries(interfaces)) {
+  for (const [ifaceName, iface] of Object.entries(interfaces || {})) {
     for (const info of iface) {
-      if ((info.family === 'IPv4' || info.family === 4) && !info.internal) {
-        const score = ifaceScore(ifaceName, info.address)
-        if (score >= 0) candidates.push({ address: info.address, score, iface: ifaceName })
-      }
+      const isV4 = (info.family === 'IPv4' || info.family === 4)
+      if (!isV4 || info.internal) continue
+      allRaw.push({ iface: ifaceName, address: info.address })
+      const score = ifaceScore(ifaceName, info.address)
+      candidates.push({ address: info.address, score, iface: ifaceName })
     }
   }
 
+  // Ordenar por score descendente y quedarse con las que tengan score >= 0
+  // Fallback: si TODAS tienen score negativo, mostrar todas igual (cliente elige)
   candidates.sort((a, b) => b.score - a.score)
-  const addresses = candidates.map(c => c.address)
+  let filtered = candidates.filter(c => c.score >= 0)
+  if (filtered.length === 0 && candidates.length > 0) filtered = candidates
+
+  const addresses = filtered.map(c => c.address)
 
   // Estado real del server — NO mentir
   const serverRunning = !!(global.__lanPort && global.__expressServer?.listening)
@@ -401,6 +419,9 @@ ipcMain.handle('network:getInfo', () => {
     port,
     serverRunning,
     url: (serverRunning && addresses.length && port) ? `http://${addresses[0]}:${port}` : null,
+    // Debug: todas las interfaces raw (antes del filtro) — crucial para diagnóstico
+    allInterfaces: allRaw,
+    scoredCandidates: candidates,
   }
 })
 
