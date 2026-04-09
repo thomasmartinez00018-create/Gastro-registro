@@ -20,52 +20,57 @@ import ErrorBoundary from './components/ErrorBoundary'
 const IS_DEV = import.meta.env.DEV
 const IS_ELECTRON = !!window.api
 
+// Items fijos en el bottom nav (mobile)
+const BOTTOM_NAV = [
+  { id: 'dashboard',  label: 'Inicio',    icon: 'home'         },
+  { id: 'productos',  label: 'Productos', icon: 'inventory_2'  },
+  { id: 'comparador', label: 'Precios',   icon: 'bar_chart'    },
+  { id: 'importar',   label: 'Importar',  icon: 'upload_file'  },
+  { id: 'mas',        label: 'Más',       icon: 'grid_view'    },
+]
+const BOTTOM_NAV_IDS = new Set(['dashboard', 'productos', 'comparador', 'importar'])
+
 function buildSections(isAdmin) {
-  const sections = [
+  return [
     {
       title: 'General',
       items: [
         { id: 'dashboard',     label: 'Dashboard',        icon: 'dashboard'      },
         { id: 'configuracion', label: 'Configuración',    icon: 'settings'       },
         ...(isAdmin ? [{ id: 'usuarios', label: 'Usuarios', icon: 'group' }] : []),
-        // Acceso Red es una herramienta admin (info de red/servidor LAN)
         ...(isAdmin && IS_ELECTRON ? [{ id: 'acceso_red', label: 'Acceso Red', icon: 'wifi' }] : []),
       ]
     },
     {
       title: 'Catálogos',
       items: [
-        { id: 'productos',     label: 'Productos',         icon: 'inventory_2'    },
-        { id: 'proveedores',   label: 'Proveedores',       icon: 'factory'        },
+        { id: 'productos',   label: 'Productos',   icon: 'inventory_2'    },
+        { id: 'proveedores', label: 'Proveedores', icon: 'factory'        },
       ]
     },
     {
       title: 'Listas de Precios',
       items: [
-        { id: 'importar',      label: 'Importar Lista',    icon: 'upload_file'    },
-        { id: 'equivalencias', label: 'Equivalencias',     icon: 'compare_arrows' },
+        { id: 'importar',      label: 'Importar Lista', icon: 'upload_file'    },
+        { id: 'equivalencias', label: 'Equivalencias',  icon: 'compare_arrows' },
       ]
     },
     {
       title: 'Análisis',
       items: [
-        { id: 'comparador',    label: 'Comparador',        icon: 'bar_chart'      },
-        { id: 'simulador',     label: 'Pedidos',           icon: 'receipt_long'   },
+        { id: 'comparador', label: 'Comparador', icon: 'bar_chart'    },
+        { id: 'simulador',  label: 'Pedidos',    icon: 'receipt_long' },
       ]
     },
-    // Integración con sistema externo — admin-only
     ...(isAdmin ? [{
       title: 'Integración',
-      items: [
-        { id: 'vincular',      label: 'Vincular OPS',      icon: 'link'           },
-      ]
+      items: [{ id: 'vincular', label: 'Vincular OPS', icon: 'link' }]
     }] : []),
-    ...( IS_DEV ? [{
+    ...(IS_DEV ? [{
       title: 'Desarrollador',
       items: [{ id: 'licencias', label: 'Generar Licencias', icon: 'key' }],
     }] : []),
   ]
-  return sections
 }
 
 const PAGES = {
@@ -89,23 +94,22 @@ function AppInner() {
   const [page, setPage] = useState('dashboard')
   const { job } = useImport()
   const { user, logout, isAdmin, loading: authLoading } = useAuth()
-  // Si un no-admin queda en una página admin-only (por estado residual), redirigir a dashboard
+
   useEffect(() => {
     if (!isAdmin && ADMIN_ONLY_PAGES.has(page)) setPage('dashboard')
   }, [isAdmin, page])
+
   const effectivePage = (!isAdmin && ADMIN_ONLY_PAGES.has(page)) ? 'dashboard' : page
   const Page = PAGES[effectivePage] || Dashboard
 
   // Personalización
   const [appSettings, setAppSettings] = useState({ restaurantName: '', logoBase64: '', theme: 'gastronomica' })
-
   useEffect(() => {
     const s = loadAppSettings()
     setAppSettings(s)
     applyTheme(s.theme || 'gastronomica')
     applyFontSize(s.fontSize || 'normal')
   }, [])
-
   useEffect(() => {
     const handler = (e) => {
       const s = e.detail
@@ -116,12 +120,11 @@ function AppInner() {
     window.addEventListener('app-settings-changed', handler)
     return () => window.removeEventListener('app-settings-changed', handler)
   }, [])
-
   useEffect(() => { window._navigateTo = setPage }, [setPage])
 
   const { restaurantName } = appSettings
 
-  // Network info (solo admin en Electron)
+  // LAN (solo admin en Electron)
   const [lanUrl, setLanUrl] = useState(IS_DEV && isAdmin ? 'http://192.168.1.5:3001' : null)
   const [showQr, setShowQr] = useState(false)
   useEffect(() => {
@@ -132,7 +135,7 @@ function AppInner() {
     }).catch(() => {})
   }, [isAdmin])
 
-  // Sidebar colapsable
+  // Sidebar desktop colapsable
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     try { return localStorage.getItem('sidebar_collapsed') === 'true' } catch { return false }
   })
@@ -144,14 +147,17 @@ function AppInner() {
     })
   }
 
-  // Mobile menu (debe estar antes de early returns — regla de hooks)
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
-  const closeMobile = () => setMobileMenuOpen(false)
+  // Mobile: bottom nav + more sheet
+  const [moreOpen, setMoreOpen] = useState(false)
+  const navTo = (id) => { setPage(id); setMoreOpen(false) }
 
   // Pantalla de carga
   if (authLoading) return (
-    <div style={{ position: 'fixed', inset: 0, background: '#111316', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <div style={{ color: '#64748b', fontSize: '13px', fontFamily: 'Inter, sans-serif', display: 'flex', alignItems: 'center', gap: '10px' }}>
+    <div style={{
+      position: 'fixed', inset: 0, background: 'var(--bg)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+    }}>
+      <div style={{ color: 'var(--text-muted)', fontSize: '13px', fontFamily: 'var(--font-body)', display: 'flex', alignItems: 'center', gap: '10px' }}>
         <span className="material-symbols-outlined" style={{ animation: 'spin 1.2s linear infinite', color: 'var(--accent)' }}>autorenew</span>
         Verificando sesión…
       </div>
@@ -160,32 +166,30 @@ function AppInner() {
 
   if (!user) return <LoginScreen />
 
+  // Items del "Más" en mobile = todo lo que no está en el bottom nav fijo
+  const moreItems = buildSections(isAdmin).flatMap(s =>
+    s.items.filter(item => !BOTTOM_NAV_IDS.has(item.id))
+  )
+
   return (
     <div className="app-layout">
 
-      {/* ── Mobile hamburger ──────────────────────────────────────────── */}
-      <button className="mobile-menu-btn" onClick={() => setMobileMenuOpen(v => !v)}>
-        <span className="material-symbols-outlined">{mobileMenuOpen ? 'close' : 'menu'}</span>
-      </button>
-      <div className={`sidebar-overlay ${mobileMenuOpen ? 'visible' : ''}`} onClick={closeMobile} />
+      {/* ══════════════════════════════════════════
+          SIDEBAR — desktop only
+      ══════════════════════════════════════════ */}
+      <aside className={`sidebar ${sidebarCollapsed ? 'collapsed' : ''}`}>
 
-      {/* ── Sidebar ──────────────────────────────────────────────────────── */}
-      <aside className={`sidebar ${sidebarCollapsed ? 'collapsed' : ''} ${mobileMenuOpen ? 'mobile-open' : ''}`}>
-
-        {/* Botón colapsar */}
         <button className="sidebar-collapse-btn" onClick={toggleSidebar} title={sidebarCollapsed ? 'Expandir' : 'Colapsar'}>
           <span className="material-symbols-outlined">{sidebarCollapsed ? 'chevron_right' : 'chevron_left'}</span>
         </button>
 
-        {/* Logo / Identidad */}
+        {/* Logo */}
         <div className="sidebar-logo">
-          <div className="sidebar-logo-title">
-            {restaurantName || 'Gastronomic OS'}
-          </div>
+          <div className="sidebar-logo-title">{restaurantName || 'Gastronomic OS'}</div>
           <p>Supplier Management</p>
         </div>
 
-        {/* Navegación */}
+        {/* Nav */}
         <nav className="sidebar-nav">
           {buildSections(isAdmin).map(section => (
             <div key={section.title}>
@@ -196,7 +200,7 @@ function AppInner() {
                   <button
                     key={item.id}
                     className={`nav-item ${effectivePage === item.id ? 'active' : ''}`}
-                    onClick={() => { setPage(item.id); closeMobile() }}
+                    onClick={() => setPage(item.id)}
                   >
                     <span className="icon">
                       <span className="material-symbols-outlined">{item.icon}</span>
@@ -204,12 +208,11 @@ function AppInner() {
                     <span style={{ flex: 1 }}>{item.label}</span>
                     {isImportando && (
                       <span style={{
-                        width: '7px', height: '7px', borderRadius: '50%',
+                        width: '6px', height: '6px', borderRadius: '50%',
                         background: 'var(--accent)',
-                        boxShadow: '0 0 6px var(--accent)',
                         animation: 'pulse-dot 1.2s ease-in-out infinite',
                         flexShrink: 0,
-                      }} title="Importación en progreso…" />
+                      }} />
                     )}
                   </button>
                 )
@@ -219,7 +222,7 @@ function AppInner() {
         </nav>
 
         {/* Footer */}
-        <div className="sidebar-footer" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '6px' }}>
+        <div className="sidebar-footer" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '8px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <span className="sidebar-footer-badge">{isAdmin ? 'ADMIN' : 'USER'}</span>
             <span className="sidebar-footer-text" style={{ flex: 1 }}>
@@ -228,14 +231,14 @@ function AppInner() {
           </div>
           <button onClick={logout} style={{
             background: 'none', border: 'none', color: 'var(--text-light)',
-            fontSize: '11px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px',
-            padding: '2px 0', fontFamily: 'inherit',
+            fontSize: '11px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px',
+            padding: '2px 0', fontFamily: 'var(--font-body)',
           }}>
             <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>logout</span>
             Cerrar sesión
           </button>
 
-          {/* LAN access indicator */}
+          {/* LAN indicator */}
           {lanUrl && (
             <div style={{ position: 'relative' }}>
               <button onClick={() => setShowQr(v => !v)} style={{
@@ -243,33 +246,32 @@ function AppInner() {
                 borderRadius: 'var(--radius-sm)', padding: '5px 10px',
                 color: 'var(--text-muted)', fontSize: '10px', cursor: 'pointer',
                 display: 'flex', alignItems: 'center', gap: '6px', width: '100%',
-                fontFamily: 'inherit',
+                fontFamily: 'var(--font-body)',
               }}>
-                <span className="material-symbols-outlined" style={{ fontSize: '14px', color: 'var(--success)' }}>wifi</span>
-                <code style={{ fontSize: '10px', flex: 1, textAlign: 'left', color: 'var(--text)' }}>{lanUrl.replace('http://', '')}</code>
+                <span className="material-symbols-outlined" style={{ fontSize: '13px', color: 'var(--success)' }}>wifi</span>
+                <code style={{ fontSize: '10px', flex: 1, textAlign: 'left', color: 'var(--text)', fontFamily: 'var(--font-mono)' }}>
+                  {lanUrl.replace('http://', '')}
+                </code>
                 <span className="material-symbols-outlined" style={{ fontSize: '12px' }}>qr_code_2</span>
               </button>
-
-              {/* QR popover */}
               {showQr && (
                 <div style={{
                   position: 'absolute', bottom: '100%', left: 0, marginBottom: '8px',
                   background: 'var(--surface)', border: '1px solid var(--border)',
                   borderRadius: 'var(--radius)', boxShadow: 'var(--shadow-xl)',
-                  padding: '16px', zIndex: 200, width: '220px',
+                  padding: '16px', zIndex: 200, width: '210px',
                   animation: 'slideModal var(--t-slow) var(--ease-spring)',
                 }}>
                   <div style={{ textAlign: 'center' }}>
-                    <div style={{ background: '#fff', padding: '12px', borderRadius: 'var(--radius-sm)', display: 'inline-block', marginBottom: '8px' }}>
-                      <QRCodeSVG value={lanUrl} size={140} />
+                    <div style={{ background: '#fff', padding: '10px', borderRadius: 'var(--radius-sm)', display: 'inline-block', marginBottom: '8px' }}>
+                      <QRCodeSVG value={lanUrl} size={130} />
                     </div>
                     <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '4px' }}>Escaneá para conectarte</p>
-                    <code style={{ fontSize: '11px', color: 'var(--accent)', fontWeight: 600 }}>{lanUrl}</code>
+                    <code style={{ fontSize: '11px', color: 'var(--accent)', fontWeight: 600, fontFamily: 'var(--font-mono)' }}>{lanUrl}</code>
                   </div>
                   <button onClick={() => setShowQr(false)} style={{
                     position: 'absolute', top: '6px', right: '6px',
-                    background: 'none', border: 'none', color: 'var(--text-light)',
-                    cursor: 'pointer', padding: '2px',
+                    background: 'none', border: 'none', color: 'var(--text-light)', cursor: 'pointer',
                   }}>
                     <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>close</span>
                   </button>
@@ -280,17 +282,117 @@ function AppInner() {
         </div>
       </aside>
 
-      {/* ── Content Shell ────────────────────────────────────────────────── */}
+      {/* ══════════════════════════════════════════
+          CONTENT SHELL
+      ══════════════════════════════════════════ */}
       <div className="content-shell">
-
-        {/* Contenido de la página */}
         <main className="main-content">
           <ErrorBoundary key={effectivePage}>
             <Page onNavigate={setPage} />
           </ErrorBoundary>
         </main>
-
       </div>
+
+      {/* ══════════════════════════════════════════
+          BOTTOM NAV — mobile only
+      ══════════════════════════════════════════ */}
+      <nav className="bottom-nav">
+        <div className="bottom-nav-inner">
+          {BOTTOM_NAV.map(item => {
+            const isActive = item.id === 'mas'
+              ? moreOpen
+              : effectivePage === item.id
+            const isImportando = item.id === 'importar' && job.aiProcessing
+            return (
+              <button
+                key={item.id}
+                className={`bottom-nav-item ${isActive ? 'active' : ''}`}
+                onClick={() => {
+                  if (item.id === 'mas') setMoreOpen(v => !v)
+                  else { navTo(item.id) }
+                }}
+              >
+                <span className="material-symbols-outlined" style={{ position: 'relative' }}>
+                  {item.icon}
+                  {isImportando && (
+                    <span style={{
+                      position: 'absolute', top: -2, right: -2,
+                      width: '7px', height: '7px', borderRadius: '50%',
+                      background: 'var(--accent)',
+                      animation: 'pulse-dot 1.2s ease-in-out infinite',
+                    }} />
+                  )}
+                </span>
+                <span>{item.label}</span>
+              </button>
+            )
+          })}
+        </div>
+      </nav>
+
+      {/* ══════════════════════════════════════════
+          MORE SHEET — mobile
+      ══════════════════════════════════════════ */}
+      {moreOpen && (
+        <>
+          <div className="more-overlay" onClick={() => setMoreOpen(false)} />
+          <div className="more-sheet">
+
+            {/* Navegación extra */}
+            <div className="more-sheet-header">Secciones</div>
+            {moreItems.map(item => (
+              <button
+                key={item.id}
+                className={`more-sheet-item ${effectivePage === item.id ? 'active' : ''}`}
+                onClick={() => navTo(item.id)}
+              >
+                <span className="material-symbols-outlined">{item.icon}</span>
+                {item.label}
+              </button>
+            ))}
+
+            <div className="more-sheet-divider" />
+
+            {/* Usuario + logout */}
+            <div className="more-sheet-user">
+              <div>
+                <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text)' }}>
+                  {user?.display_name || user?.username}
+                </div>
+                <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                  {isAdmin ? 'Administrador' : 'Usuario'}
+                </div>
+              </div>
+              <button onClick={() => { setMoreOpen(false); logout() }} style={{
+                background: 'var(--surface-2)', border: '1px solid var(--border)',
+                borderRadius: 'var(--radius-sm)', padding: '7px 14px',
+                color: 'var(--text-muted)', fontSize: '12px', cursor: 'pointer',
+                display: 'flex', alignItems: 'center', gap: '5px', fontFamily: 'var(--font-body)',
+              }}>
+                <span className="material-symbols-outlined" style={{ fontSize: '15px' }}>logout</span>
+                Salir
+              </button>
+            </div>
+
+            {/* LAN en más */}
+            {lanUrl && (
+              <div style={{ padding: '0 20px 12px' }}>
+                <div style={{
+                  background: 'var(--surface-2)', border: '1px solid var(--border)',
+                  borderRadius: 'var(--radius-sm)', padding: '8px 12px',
+                  display: 'flex', alignItems: 'center', gap: '8px',
+                }}>
+                  <span className="material-symbols-outlined" style={{ fontSize: '15px', color: 'var(--success)' }}>wifi</span>
+                  <code style={{ fontSize: '11px', color: 'var(--text)', fontFamily: 'var(--font-mono)', flex: 1 }}>
+                    {lanUrl.replace('http://', '')}
+                  </code>
+                </div>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+
     </div>
   )
 }
