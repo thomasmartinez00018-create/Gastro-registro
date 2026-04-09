@@ -15,20 +15,26 @@ module.exports = function createServer({ db, JWT_SECRET, distPath }) {
   app.options('*', cors())
   app.use(express.json({ limit: '50mb' }))
 
-  // Log en memoria de las últimas peticiones a /ping y /api/auth/login
-  // Para diagnóstico desde la UI — permite ver si el celular realmente llega al server
+  // Log en memoria de TODAS las peticiones — para diagnóstico desde la UI
   global.__recentRequests = global.__recentRequests || []
   function logRequest(req, extra = {}) {
     const entry = {
       time: new Date().toISOString(),
       ip: req.ip || req.socket?.remoteAddress || 'unknown',
       ua: (req.headers['user-agent'] || '').slice(0, 80),
+      method: req.method,
       path: req.path,
       ...extra,
     }
     global.__recentRequests.unshift(entry)
-    if (global.__recentRequests.length > 20) global.__recentRequests.pop()
+    if (global.__recentRequests.length > 30) global.__recentRequests.pop()
   }
+
+  // Middleware global: loggear toda petición que llegue
+  app.use((req, res, next) => {
+    logRequest(req)
+    next()
+  })
 
   // ── Helpers ────────────────────────────────────────────────────────────────
   function userFilter(user) {

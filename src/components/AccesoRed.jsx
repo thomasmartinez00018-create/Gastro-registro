@@ -48,31 +48,43 @@ export default function AccesoRed() {
   }
 
   async function handlePingTest() {
-    if (!info?.port) return
+    if (!info?.port) {
+      setPingStatus('fail')
+      setPingDetail('No hay puerto asignado — el servidor Express no arrancó. Reiniciá la app.')
+      return
+    }
     setPingStatus('testing')
     setPingDetail(null)
 
     const port = info.port
-    const localhostUrl = `http://localhost:${port}/ping`
-    const ipUrl = `http://${selectedIP}:${port}/ping`
+    // Paso 1: verificación desde MAIN PROCESS (TCP+HTTP interno, inmune a CORS/CSP/IPv6)
+    let mainVerify = null
+    if (api.network?.verifyServer) {
+      try { mainVerify = await api.network.verifyServer() } catch (e) { mainVerify = { ok: false, error: e.message } }
+    }
 
-    // Test 1: localhost (server interno)
-    const t1 = await tryFetch(localhostUrl)
-    // Test 2: IP LAN (prueba el camino completo)
-    const t2 = selectedIP ? await tryFetch(ipUrl) : { ok: false, error: 'Sin IP seleccionada' }
+    // Paso 2: desde el renderer, usando 127.0.0.1 explícito (evita el bug IPv6 de Windows/Node 18+)
+    const t1 = await tryFetch(`http://127.0.0.1:${port}/ping`)
+    // Paso 3: desde el renderer, usando la IP LAN (prueba el camino completo)
+    const t2 = selectedIP ? await tryFetch(`http://${selectedIP}:${port}/ping`) : { ok: false, error: 'Sin IP seleccionada' }
 
-    if (t1.ok && t2.ok) {
+    // Análisis de resultados
+    if (mainVerify && !mainVerify.ok) {
+      setPingStatus('fail')
+      setPingDetail(`SERVIDOR NO ACTIVO. Verificación interna falló: ${mainVerify.error}. El server Express no está escuchando. Reiniciá la app. Si persiste, otro programa está usando el puerto ${port} o falló el arranque del server.`)
+    } else if (t1.ok && t2.ok) {
       setPingStatus('ok')
-      setPingDetail(`Server responde localmente y por IP LAN. Si el celular no conecta: 1) verificá misma WiFi, 2) pedile que escanee el QR de nuevo.`)
+      setPingDetail(`Todo OK. Server responde en 127.0.0.1 y en ${selectedIP}. Si el celular no conecta: verificá que esté en la MISMA WiFi (misma subred). Tu IP: ${selectedIP} — la del celular debe empezar igual.`)
     } else if (t1.ok && !t2.ok) {
       setPingStatus('partial')
-      setPingDetail(`El server responde en localhost pero NO en la IP LAN (${selectedIP}). Error: ${t2.error}. Causa típica: Firewall bloqueando. Hacé click en "Abrir puerto en Firewall" arriba o ejecutá la app como Administrador.`)
-    } else if (!t1.ok && !t2.ok) {
-      setPingStatus('fail')
-      setPingDetail(`El server Express no responde ni siquiera en localhost. Error: ${t1.error}. Causa: el server no arrancó. Reiniciá la app.`)
-    } else {
+      setPingDetail(`Server responde localmente (127.0.0.1) pero NO por la IP LAN ${selectedIP}. Error: ${t2.error}. Causa: Firewall bloqueando conexiones entrantes. Abrí el puerto en Firewall arriba, o ejecutá la app como Administrador (click derecho > Ejecutar como administrador).`)
+    } else if (!t1.ok && mainVerify?.ok) {
+      // Main process verifica OK pero renderer fetch falla → CORS/CSP/extensión
       setPingStatus('partial')
-      setPingDetail(`Resultado raro: localhost falla (${t1.error}) pero IP LAN funciona. Reiniciá la app.`)
+      setPingDetail(`Inconsistencia: el main process verifica OK pero el fetch del renderer falla (${t1.error}). Causa probable: antivirus interceptando loopback o extensión de navegador. Probá desactivar temporalmente el antivirus.`)
+    } else {
+      setPingStatus('fail')
+      setPingDetail(`Ambos tests fallaron. Verificación interna: ${mainVerify?.error || 'N/A'}. Fetch 127.0.0.1: ${t1.error}. Fetch IP LAN: ${t2.error}. Reiniciá la app. Si persiste, algún antivirus está bloqueando.`)
     }
 
     // Actualizar log de peticiones recientes
@@ -316,18 +328,22 @@ export default function AccesoRed() {
 
               {/* Info + URL */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                {/* Status */}
+                {/* Status — refleja estado REAL del server */}
                 <div className="card">
                   <div className="card-body" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                     <div style={{
                       width: '10px', height: '10px', borderRadius: '50%',
-                      background: 'var(--success)',
-                      boxShadow: '0 0 8px var(--success)',
+                      background: info.serverRunning ? 'var(--success)' : 'var(--danger)',
+                      boxShadow: `0 0 8px ${info.serverRunning ? 'var(--success)' : 'var(--danger)'}`,
                       animation: 'pulse-dot 2s ease-in-out infinite',
                     }} />
                     <div>
-                      <div style={{ fontWeight: 600, fontSize: '14px' }}>Servidor activo en la red</div>
-                      <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Puerto {info.port}</div>
+                      <div style={{ fontWeight: 600, fontSize: '14px' }}>
+                        {info.serverRunning ? 'Servidor activo en la red' : 'Servidor NO activo'}
+                      </div>
+                      <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                        {info.port ? `Puerto ${info.port}` : 'Sin puerto asignado'}
+                      </div>
                     </div>
                   </div>
                 </div>

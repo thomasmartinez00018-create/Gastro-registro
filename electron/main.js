@@ -33,6 +33,7 @@ function startLocalServer(distPath, candidatePorts = [3001, 3002, 3003, 3004, 30
       const [port, ...rest] = ports
       const server = expressApp.listen(port, '0.0.0.0', () => {
         global.__lanPort = port
+        global.__expressServer = server  // Guardar referencia para verificación
         console.log(`[Express] LAN server listening on 0.0.0.0:${port}`)
         resolve(port)
       })
@@ -48,6 +49,32 @@ function startLocalServer(distPath, candidatePorts = [3001, 3002, 3003, 3004, 30
   }
 
   return tryPort(candidatePorts)
+}
+
+// Verificación real de que el server está respondiendo
+// Hace un TCP connect + HTTP GET a /ping desde main process
+function verifyServerAlive(port) {
+  return new Promise((resolve) => {
+    const http = require('http')
+    const req = http.get({
+      host: '127.0.0.1',
+      port,
+      path: '/ping',
+      timeout: 3000,
+    }, (res) => {
+      let body = ''
+      res.on('data', c => body += c)
+      res.on('end', () => {
+        if (res.statusCode === 200) resolve({ ok: true, status: res.statusCode, body: body.slice(0, 200) })
+        else resolve({ ok: false, error: `HTTP ${res.statusCode}`, body: body.slice(0, 200) })
+      })
+    })
+    req.on('error', (err) => resolve({ ok: false, error: `${err.code || 'ERR'}: ${err.message}` }))
+    req.on('timeout', () => {
+      req.destroy()
+      resolve({ ok: false, error: 'Timeout (3s)' })
+    })
+  })
 }
 
 // ─── Database setup ───────────────────────────────────────────────────────────
@@ -362,11 +389,27 @@ ipcMain.handle('network:getInfo', () => {
     }
   }
 
-  // Ordenar por score descendente
   candidates.sort((a, b) => b.score - a.score)
   const addresses = candidates.map(c => c.address)
-  const port = global.__lanPort || 3001
-  return { addresses, port, url: addresses.length ? `http://${addresses[0]}:${port}` : null }
+
+  // Estado real del server — NO mentir
+  const serverRunning = !!(global.__lanPort && global.__expressServer?.listening)
+  const port = global.__lanPort || null
+
+  return {
+    addresses,
+    port,
+    serverRunning,
+    url: (serverRunning && addresses.length && port) ? `http://${addresses[0]}:${port}` : null,
+  }
+})
+
+// Verificación TCP+HTTP real del server desde main process
+ipcMain.handle('network:verifyServer', async () => {
+  if (!global.__lanPort) return { ok: false, error: 'El servidor Express no arrancó (global.__lanPort es null)' }
+  if (!global.__expressServer?.listening) return { ok: false, error: 'El servidor Express existe pero no está escuchando' }
+  const result = await verifyServerAlive(global.__lanPort)
+  return { ...result, port: global.__lanPort, listening: global.__expressServer.listening }
 })
 
 // ─── Firewall Windows ─────────────────────────────────────────────────────────

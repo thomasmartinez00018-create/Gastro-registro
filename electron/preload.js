@@ -99,5 +99,6 @@ contextBridge.exposeInMainWorld('api', {
     openFirewall:   () => ipcRenderer.invoke('network:openFirewall'),
     firewallStatus: () => ipcRenderer.invoke('network:firewallStatus'),
     recentRequests: () => ipcRenderer.invoke('network:recentRequests'),
+    verifyServer:   () => ipcRenderer.invoke('network:verifyServer'),
   },
 })
