@@ -11,8 +11,9 @@ const fs = require('fs')
 module.exports = function createServer({ db, JWT_SECRET, distPath }) {
   const app = express()
   // CORS totalmente permisivo — LAN privada, sin riesgo
-  app.use(cors({ origin: '*', methods: '*', allowedHeaders: '*' }))
-  app.options('*', cors())
+  // NOTA: NO usar app.options('*', ...) porque Express 5 rompe con wildcard path
+  // (path-to-regexp v6 no acepta '*' como path). El middleware cors() ya maneja OPTIONS.
+  app.use(cors({ origin: true, credentials: false }))
   app.use(express.json({ limit: '50mb' }))
 
   // Log en memoria de TODAS las peticiones — para diagnóstico desde la UI
@@ -327,9 +328,12 @@ module.exports = function createServer({ db, JWT_SECRET, distPath }) {
   })
 
   // ── Static files (React frontend) ────────────────────────────────────────
+  // Express 5 + path-to-regexp v6: NO usar '*' como path. Usar middleware fallback.
   if (distPath && fs.existsSync(distPath)) {
     app.use(express.static(distPath))
-    app.get('*', (req, res) => {
+    // SPA fallback: middleware que captura todo lo que no matchee rutas previas
+    app.use((req, res, next) => {
+      if (req.method !== 'GET') return next()
       if (req.path.startsWith('/api/')) return res.status(404).json({ error: 'Not found' })
       res.sendFile(path.join(distPath, 'index.html'))
     })

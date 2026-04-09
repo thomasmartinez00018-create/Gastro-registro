@@ -24,25 +24,47 @@ const MIME = {
 
 const createServer = require('./server')
 
-function startLocalServer(distPath, candidatePorts = [3001, 3002, 3003, 3004, 3005]) {
-  const expressApp = createServer({ db, JWT_SECRET, distPath })
+async function startLocalServer(distPath, candidatePorts = [3001, 3002, 3003, 3004, 3005, 8080, 8081, 5050]) {
+  let expressApp
+  try {
+    expressApp = createServer({ db, JWT_SECRET, distPath })
+  } catch (err) {
+    // Error sincrónico al construir el server (p.ej. better-sqlite3 no carga, módulo faltante)
+    const msg = `createServer() threw: ${err.message}\nStack: ${err.stack}`
+    console.error('[Express] FATAL', msg)
+    throw new Error(`Error al construir Express: ${err.message}`)
+  }
 
-  function tryPort(ports) {
+  function tryPort(ports, errorsLog = []) {
     return new Promise((resolve, reject) => {
-      if (!ports.length) return reject(new Error('No hay puertos disponibles'))
+      if (!ports.length) {
+        const all = errorsLog.map(e => `port ${e.port}: ${e.error}`).join(' · ')
+        return reject(new Error(`No se pudo bindear a ningún puerto. Detalles: ${all}`))
+      }
       const [port, ...rest] = ports
-      const server = expressApp.listen(port, '0.0.0.0', () => {
-        global.__lanPort = port
-        global.__expressServer = server  // Guardar referencia para verificación
-        console.log(`[Express] LAN server listening on 0.0.0.0:${port}`)
-        resolve(port)
-      })
+      let server
+      try {
+        server = expressApp.listen(port, '0.0.0.0', () => {
+          global.__lanPort = port
+          global.__expressServer = server
+          console.log(`[Express] LAN server listening on 0.0.0.0:${port}`)
+          resolve(port)
+        })
+      } catch (syncErr) {
+        errorsLog.push({ port, error: `sync: ${syncErr.message}` })
+        return tryPort(rest, errorsLog).then(resolve).catch(reject)
+      }
       server.on('error', (err) => {
-        if (err.code === 'EADDRINUSE') {
-          console.warn(`[Express] Puerto ${port} ocupado, intentando ${rest[0] ?? 'ninguno'}...`)
-          server.close(() => tryPort(rest).then(resolve).catch(reject))
+        errorsLog.push({ port, error: `${err.code || 'ERR'}: ${err.message}` })
+        if (err.code === 'EADDRINUSE' || err.code === 'EACCES') {
+          console.warn(`[Express] Puerto ${port} no disponible (${err.code}), intentando siguiente...`)
+          try { server.close() } catch {}
+          tryPort(rest, errorsLog).then(resolve).catch(reject)
         } else {
-          reject(err)
+          // Otro error — igual probar siguiente puerto
+          console.error(`[Express] Error en puerto ${port}:`, err.message)
+          try { server.close() } catch {}
+          tryPort(rest, errorsLog).then(resolve).catch(reject)
         }
       })
     })
@@ -402,13 +424,20 @@ ipcMain.handle('network:getInfo', () => {
     }
   }
 
-  // Ordenar por score descendente y quedarse con las que tengan score >= 0
-  // Fallback: si TODAS tienen score negativo, mostrar todas igual (cliente elige)
+  // Ordenar por score descendente
   candidates.sort((a, b) => b.score - a.score)
   let filtered = candidates.filter(c => c.score >= 0)
   if (filtered.length === 0 && candidates.length > 0) filtered = candidates
 
-  const addresses = filtered.map(c => c.address)
+  // Deduplicar IPs (cuando la misma IP aparece en múltiples adaptadores)
+  const seen = new Set()
+  const addresses = []
+  for (const c of filtered) {
+    if (!seen.has(c.address)) {
+      seen.add(c.address)
+      addresses.push(c.address)
+    }
+  }
 
   // Estado real del server — NO mentir
   const serverRunning = !!(global.__lanPort && global.__expressServer?.listening)
@@ -419,10 +448,28 @@ ipcMain.handle('network:getInfo', () => {
     port,
     serverRunning,
     url: (serverRunning && addresses.length && port) ? `http://${addresses[0]}:${port}` : null,
-    // Debug: todas las interfaces raw (antes del filtro) — crucial para diagnóstico
+    startupError: global.__serverStartupError,
+    // Debug
     allInterfaces: allRaw,
     scoredCandidates: candidates,
   }
+})
+
+// Devuelve el error de arranque del servidor + contenido del log file
+ipcMain.handle('network:getStartupError', () => {
+  const result = {
+    current: global.__serverStartupError,
+    logFile: null,
+  }
+  try {
+    const logPath = path.join(app.getPath('userData'), 'startup-error.log')
+    if (fs.existsSync(logPath)) {
+      const content = fs.readFileSync(logPath, 'utf8')
+      // Solo últimos 5KB del log
+      result.logFile = content.slice(-5000)
+    }
+  } catch {}
+  return result
 })
 
 // Verificación TCP+HTTP real del server desde main process
@@ -1345,6 +1392,7 @@ app.whenReady().then(async () => {
   JWT_SECRET = getJwtSecret()
 
   let port = null
+  global.__serverStartupError = null
   if (!isDev) {
     const distPath = path.join(__dirname, '../dist')
     try {
@@ -1358,7 +1406,21 @@ app.whenReady().then(async () => {
         global.__firewallStatus = { ok: false, error: err.message }
       })
     } catch (err) {
-      console.error('[startup] Servidor LAN no pudo iniciar, abriendo sin acceso LAN:', err.message)
+      console.error('[startup] Servidor LAN no pudo iniciar:', err.message)
+      console.error('[startup] Stack:', err.stack)
+      global.__serverStartupError = {
+        message: err.message,
+        stack: err.stack,
+        time: new Date().toISOString(),
+      }
+      // Escribir error a archivo para poder debuggear en casa del cliente
+      try {
+        const logPath = path.join(app.getPath('userData'), 'startup-error.log')
+        const logContent = `[${new Date().toISOString()}]\nError: ${err.message}\nStack:\n${err.stack}\n---\n`
+        fs.appendFileSync(logPath, logContent)
+      } catch (logErr) {
+        console.error('[startup] No se pudo escribir log:', logErr.message)
+      }
       // port queda null → createWindow carga desde file://
     }
   } else {

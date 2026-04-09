@@ -95,10 +95,11 @@ contextBridge.exposeInMainWorld('api', {
   },
   // Network
   network: {
-    getInfo:        () => ipcRenderer.invoke('network:getInfo'),
-    openFirewall:   () => ipcRenderer.invoke('network:openFirewall'),
-    firewallStatus: () => ipcRenderer.invoke('network:firewallStatus'),
-    recentRequests: () => ipcRenderer.invoke('network:recentRequests'),
-    verifyServer:   () => ipcRenderer.invoke('network:verifyServer'),
+    getInfo:         () => ipcRenderer.invoke('network:getInfo'),
+    openFirewall:    () => ipcRenderer.invoke('network:openFirewall'),
+    firewallStatus:  () => ipcRenderer.invoke('network:firewallStatus'),
+    recentRequests:  () => ipcRenderer.invoke('network:recentRequests'),
+    verifyServer:    () => ipcRenderer.invoke('network:verifyServer'),
+    getStartupError: () => ipcRenderer.invoke('network:getStartupError'),
   },
 })
