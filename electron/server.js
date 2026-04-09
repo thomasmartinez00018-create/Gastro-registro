@@ -10,8 +10,25 @@ const fs = require('fs')
 
 module.exports = function createServer({ db, JWT_SECRET, distPath }) {
   const app = express()
-  app.use(cors())
+  // CORS totalmente permisivo — LAN privada, sin riesgo
+  app.use(cors({ origin: '*', methods: '*', allowedHeaders: '*' }))
+  app.options('*', cors())
   app.use(express.json({ limit: '50mb' }))
+
+  // Log en memoria de las últimas peticiones a /ping y /api/auth/login
+  // Para diagnóstico desde la UI — permite ver si el celular realmente llega al server
+  global.__recentRequests = global.__recentRequests || []
+  function logRequest(req, extra = {}) {
+    const entry = {
+      time: new Date().toISOString(),
+      ip: req.ip || req.socket?.remoteAddress || 'unknown',
+      ua: (req.headers['user-agent'] || '').slice(0, 80),
+      path: req.path,
+      ...extra,
+    }
+    global.__recentRequests.unshift(entry)
+    if (global.__recentRequests.length > 20) global.__recentRequests.pop()
+  }
 
   // ── Helpers ────────────────────────────────────────────────────────────────
   function userFilter(user) {
@@ -40,12 +57,21 @@ module.exports = function createServer({ db, JWT_SECRET, distPath }) {
 
   // ── Health check (sin auth — para diagnóstico LAN) ───────────────────────
   app.get('/ping', (req, res) => {
+    logRequest(req)
+    res.set('Access-Control-Allow-Origin', '*')
     res.json({
       ok: true,
       server: 'Gastronomic OS',
       time: new Date().toISOString(),
       from: req.ip || req.socket?.remoteAddress,
     })
+  })
+
+  // Mismo endpoint bajo /api para testear el prefijo con auth-less
+  app.get('/api/ping', (req, res) => {
+    logRequest(req)
+    res.set('Access-Control-Allow-Origin', '*')
+    res.json({ ok: true, time: new Date().toISOString() })
   })
 
   // ── Auth routes (no middleware) ────────────────────────────────────────────

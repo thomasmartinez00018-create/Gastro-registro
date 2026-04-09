@@ -9,8 +9,9 @@ export default function AccesoRed() {
   const [fwStatus, setFwStatus]       = useState(null)   // null | object
   const [fwLoading, setFwLoading]     = useState(false)
   const [troubleOpen, setTroubleOpen] = useState(false)
-  const [pingStatus, setPingStatus]   = useState(null)   // null | 'testing' | 'ok' | 'fail'
+  const [pingStatus, setPingStatus]   = useState(null)   // null | 'testing' | 'ok' | 'fail' | 'partial'
   const [pingDetail, setPingDetail]   = useState(null)
+  const [recentReqs, setRecentReqs]   = useState([])
   const isWindows                     = navigator.userAgent.includes('Windows')
 
   useEffect(() => {
@@ -32,31 +33,54 @@ export default function AccesoRed() {
   const activeUrl = info && selectedIP ? `http://${selectedIP}:${info.port}` : info?.url
   const fwOk = fwStatus?.ok === true
 
-  async function handlePingTest() {
-    if (!activeUrl) return
-    setPingStatus('testing')
-    setPingDetail(null)
-    const pingUrl = `${activeUrl}/ping`
+  async function tryFetch(url, timeoutMs = 4000) {
     try {
       const controller = new AbortController()
-      const timeout = setTimeout(() => controller.abort(), 5000)
-      const res = await fetch(pingUrl, { signal: controller.signal })
-      clearTimeout(timeout)
-      if (res.ok) {
-        const data = await res.json()
-        setPingStatus('ok')
-        setPingDetail(`Servidor responde OK · ${data.time ? new Date(data.time).toLocaleTimeString() : ''}`)
-      } else {
-        setPingStatus('fail')
-        setPingDetail(`HTTP ${res.status} — el servidor responde pero con error`)
-      }
+      const t = setTimeout(() => controller.abort(), timeoutMs)
+      const res = await fetch(url, { signal: controller.signal, mode: 'cors', cache: 'no-store' })
+      clearTimeout(t)
+      if (res.ok) return { ok: true, status: res.status }
+      return { ok: false, error: `HTTP ${res.status}` }
     } catch (err) {
+      if (err.name === 'AbortError') return { ok: false, error: 'Timeout (4s)' }
+      return { ok: false, error: err.message }
+    }
+  }
+
+  async function handlePingTest() {
+    if (!info?.port) return
+    setPingStatus('testing')
+    setPingDetail(null)
+
+    const port = info.port
+    const localhostUrl = `http://localhost:${port}/ping`
+    const ipUrl = `http://${selectedIP}:${port}/ping`
+
+    // Test 1: localhost (server interno)
+    const t1 = await tryFetch(localhostUrl)
+    // Test 2: IP LAN (prueba el camino completo)
+    const t2 = selectedIP ? await tryFetch(ipUrl) : { ok: false, error: 'Sin IP seleccionada' }
+
+    if (t1.ok && t2.ok) {
+      setPingStatus('ok')
+      setPingDetail(`Server responde localmente y por IP LAN. Si el celular no conecta: 1) verificá misma WiFi, 2) pedile que escanee el QR de nuevo.`)
+    } else if (t1.ok && !t2.ok) {
+      setPingStatus('partial')
+      setPingDetail(`El server responde en localhost pero NO en la IP LAN (${selectedIP}). Error: ${t2.error}. Causa típica: Firewall bloqueando. Hacé click en "Abrir puerto en Firewall" arriba o ejecutá la app como Administrador.`)
+    } else if (!t1.ok && !t2.ok) {
       setPingStatus('fail')
-      if (err.name === 'AbortError') {
-        setPingDetail(`Timeout: el servidor no respondió en 5 segundos. Probá abrir el puerto en Firewall o ejecutar como Administrador.`)
-      } else {
-        setPingDetail(`No se pudo conectar: ${err.message}`)
-      }
+      setPingDetail(`El server Express no responde ni siquiera en localhost. Error: ${t1.error}. Causa: el server no arrancó. Reiniciá la app.`)
+    } else {
+      setPingStatus('partial')
+      setPingDetail(`Resultado raro: localhost falla (${t1.error}) pero IP LAN funciona. Reiniciá la app.`)
+    }
+
+    // Actualizar log de peticiones recientes
+    if (api.network?.recentRequests) {
+      try {
+        const reqs = await api.network.recentRequests()
+        setRecentReqs(reqs || [])
+      } catch {}
     }
   }
 
@@ -160,41 +184,88 @@ export default function AccesoRed() {
             )}
 
             {/* Test de conectividad */}
-            <div className="card" style={{ borderLeft: `3px solid ${pingStatus === 'ok' ? 'var(--success)' : pingStatus === 'fail' ? 'var(--danger)' : 'var(--border)'}` }}>
-              <div className="card-body" style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-                <span className="material-symbols-outlined" style={{
-                  fontSize: '20px', flexShrink: 0,
-                  color: pingStatus === 'ok' ? 'var(--success)' : pingStatus === 'fail' ? 'var(--danger)' : 'var(--text-muted)'
-                }}>
-                  {pingStatus === 'ok' ? 'check_circle' : pingStatus === 'fail' ? 'error' : 'network_check'}
-                </span>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 600, fontSize: '13px', marginBottom: pingDetail ? '4px' : 0 }}>
-                    {pingStatus === 'testing' ? 'Probando conexion...' :
-                     pingStatus === 'ok' ? 'Servidor accesible desde esta PC' :
-                     pingStatus === 'fail' ? 'No se pudo conectar al servidor' :
-                     'Probar si el servidor responde'}
-                  </div>
-                  {pingDetail && (
-                    <div style={{ fontSize: '12px', color: pingStatus === 'fail' ? 'var(--danger)' : 'var(--text-muted)' }}>
-                      {pingDetail}
-                    </div>
-                  )}
-                </div>
-                <button
-                  className="btn btn-sm btn-ghost"
-                  onClick={handlePingTest}
-                  disabled={pingStatus === 'testing' || !activeUrl}
-                  style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}
-                >
+            <div className="card" style={{
+              borderLeft: `3px solid ${
+                pingStatus === 'ok' ? 'var(--success)' :
+                pingStatus === 'partial' ? 'var(--warning, #f59e0b)' :
+                pingStatus === 'fail' ? 'var(--danger)' : 'var(--border)'
+              }`
+            }}>
+              <div className="card-body">
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', flexWrap: 'wrap' }}>
                   <span className="material-symbols-outlined" style={{
-                    fontSize: '16px',
-                    animation: pingStatus === 'testing' ? 'spin 1s linear infinite' : 'none'
+                    fontSize: '22px', flexShrink: 0,
+                    color: pingStatus === 'ok' ? 'var(--success)' :
+                           pingStatus === 'partial' ? 'var(--warning, #f59e0b)' :
+                           pingStatus === 'fail' ? 'var(--danger)' : 'var(--text-muted)'
                   }}>
-                    {pingStatus === 'testing' ? 'autorenew' : 'refresh'}
+                    {pingStatus === 'ok' ? 'check_circle' :
+                     pingStatus === 'partial' ? 'warning' :
+                     pingStatus === 'fail' ? 'error' : 'network_check'}
                   </span>
-                  {pingStatus ? 'Volver a probar' : 'Probar ahora'}
-                </button>
+                  <div style={{ flex: 1, minWidth: '250px' }}>
+                    <div style={{ fontWeight: 600, fontSize: '14px', marginBottom: pingDetail ? '4px' : 0 }}>
+                      {pingStatus === 'testing' ? 'Probando conexion...' :
+                       pingStatus === 'ok' ? 'Todo funciona correctamente' :
+                       pingStatus === 'partial' ? 'Funciona local pero no en LAN' :
+                       pingStatus === 'fail' ? 'El servidor no responde' :
+                       'Diagnostico de conexion'}
+                    </div>
+                    {pingDetail && (
+                      <div style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: 1.5 }}>
+                        {pingDetail}
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    className="btn btn-sm btn-primary"
+                    onClick={handlePingTest}
+                    disabled={pingStatus === 'testing'}
+                    style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}
+                  >
+                    <span className="material-symbols-outlined" style={{
+                      fontSize: '16px',
+                      animation: pingStatus === 'testing' ? 'spin 1s linear infinite' : 'none'
+                    }}>
+                      {pingStatus === 'testing' ? 'autorenew' : 'play_arrow'}
+                    </span>
+                    {pingStatus ? 'Probar de nuevo' : 'Probar ahora'}
+                  </button>
+                </div>
+
+                {/* Log de peticiones recibidas — clave para diagnosticar celular */}
+                {pingStatus && (
+                  <div style={{
+                    marginTop: '14px',
+                    background: 'var(--surface-2)',
+                    borderRadius: 'var(--radius-sm)',
+                    padding: '10px 12px',
+                    fontSize: '11px',
+                    fontFamily: 'monospace',
+                    maxHeight: '160px',
+                    overflowY: 'auto',
+                  }}>
+                    <div style={{ fontWeight: 700, color: 'var(--text-muted)', marginBottom: '6px', fontFamily: 'inherit' }}>
+                      ULTIMAS PETICIONES AL SERVIDOR ({recentReqs.length})
+                    </div>
+                    {recentReqs.length === 0 ? (
+                      <div style={{ color: 'var(--text-light)' }}>— Ninguna petición registrada —</div>
+                    ) : (
+                      recentReqs.map((r, i) => (
+                        <div key={i} style={{ marginBottom: '3px' }}>
+                          <span style={{ color: 'var(--text-light)' }}>{new Date(r.time).toLocaleTimeString()}</span>
+                          {' · '}
+                          <span style={{ color: 'var(--accent)', fontWeight: 600 }}>{r.ip}</span>
+                          {' '}
+                          <span>{r.path}</span>
+                        </div>
+                      ))
+                    )}
+                    <div style={{ marginTop: '6px', fontSize: '10px', color: 'var(--text-light)', fontFamily: 'inherit' }}>
+                      Si el celular no aparece acá, la peticion nunca llega al servidor (firewall o red diferente).
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 

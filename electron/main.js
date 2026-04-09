@@ -480,6 +480,12 @@ ipcMain.handle('network:firewallStatus', () => {
   return global.__firewallStatus
 })
 
+// Devuelve las últimas peticiones HTTP recibidas por el server Express
+// Permite ver desde la UI si el celular realmente llega al server
+ipcMain.handle('network:recentRequests', () => {
+  return global.__recentRequests || []
+})
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const UNIT_MAP = {
   'kilo': 'kg', 'kilos': 'kg', 'kg': 'kg',
